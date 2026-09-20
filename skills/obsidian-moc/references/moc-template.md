@@ -1,0 +1,1 @@
+../../../shared-references/moc-template.md
