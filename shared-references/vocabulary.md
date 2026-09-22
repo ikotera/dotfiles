@@ -70,6 +70,9 @@
 | `security` | セキュリティ・安全性・防御設計 |
 | `workflow` | 手順・運用フロー |
 | `pattern` | 反復して現れる一般パターン |
+| `constraint` | 律速要因・ボトルネック・系の振る舞いを縛る制約 |
+| `evidence` | 実証の強さ・自然実験・因果推論の証拠の質 |
+| `signaling` | シグナリング・コストのかかる信号・可観測性 |
 | `config` | 設定・構成 |
 | `troubleshooting` | 障害切り分け・原因推定・復旧 |
 | `reverse-engineering` | 未知のバイナリ形式・非公開APIの挙動を観察・実験で解明する手法 |
@@ -102,6 +105,8 @@
 | `market-microstructure` | 板・流動性・約定・価格インパクト |
 | `performance-metric` | カルマーレシオなど運用成績指標 |
 | `risk-metric` | マイクロモート・曝露量正規化など、リスクを測る単位と分母の設計 |
+| `industry-structure` | 産業構造・競争・参入障壁・コモディティ化 |
+| `capital-allocation` | 資本配分・投資回収・償却・インセンティブ設計 |
 | `optimization` | 最適化・目的関数・制約条件 |
 | `kb-structure` | Knowledge Base の構造・MOC・運用設計 |
 | `terminal` | ターミナル・端末エミュレーション |
