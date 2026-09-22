@@ -90,6 +90,8 @@
 | `power-integrity` | 電源品質・リップル・デカップリング・電源安定性 |
 | `signal-integrity` | 波形品質・伝送品質・ノイズ余裕 |
 | `communication` | 通信方式・信号線・プロトコル |
+| `radio-propagation` | 自由空間損失・地面反射・回折・透過など電波が空間を伝わる過程 |
+| `antenna` | アンテナと給電系の物理・設計（放射・指向性・偏波・整合・給電線） |
 | `measurement` | 実測・比較測定・波形観測 |
 | `control-system` | フィードバック制御・発振・安定性 |
 | `risk-management` | 損失制御・リスク管理・ドローダウン |
