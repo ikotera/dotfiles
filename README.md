@@ -22,6 +22,7 @@ dotfiles/
     sync.sh                 # ローカル(macOS)の自動同期
     cloud_setup.sh          # クラウド環境: ~/.claude へのリンクを張る
     verify_cloud_setup.sh   # クラウドセッションでの動作確認
+  zsh/.zshrc                # zsh 設定の正本（~/.zshrc から symlink。秘密は ~/.zshrc.local へ）
 ```
 
 ## CLAUDE.md と AGENTS.md の関係
@@ -39,7 +40,10 @@ ln -sfn ~/Github/dotfiles/skills ~/.claude/skills
 ln -sfn ~/Github/dotfiles/instructions ~/.claude/instructions
 ln -sfn ~/Github/dotfiles/AGENTS.md ~/.codex/AGENTS.md
 ln -sfn ~/Github/dotfiles/instructions ~/.codex/instructions
+ln -sfn ~/Github/dotfiles/zsh/.zshrc ~/.zshrc
 ```
+
+API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshrc.local`（`chmod 600`）に書く。`~/.zshrc` の末尾で存在すれば読み込まれる。
 
 `~/.claude/CLAUDE.md` は symlink ではなく実ファイルにする（`rtk` 未導入なら1行目のみでよい）。
 
