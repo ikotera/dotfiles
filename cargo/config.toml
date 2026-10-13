@@ -1,0 +1,7 @@
+# ~/.cargo/config.toml の正本（symlink で参照）
+[build]
+# 中間成果物（deps・incremental 等）を1か所に集約する。
+# - workspace ごとにハッシュ名で分かれるので並行ビルドでもロック競合しない
+# - 末尾 .noindex のフォルダは Spotlight の索引対象外になる
+# - 掃除は storage/cargo-cleanup.sh（launchd で週1回）
+build-dir = "{cargo-cache-home}/build.noindex/{workspace-path-hash}"

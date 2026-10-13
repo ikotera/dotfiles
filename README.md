@@ -24,6 +24,8 @@ dotfiles/
     cloud_setup.sh          # クラウド環境: ~/.claude へのリンクを張る
     verify_cloud_setup.sh   # クラウドセッションでの動作確認
   zsh/.zshrc                # zsh 設定の正本（~/.zshrc から symlink。秘密は ~/.zshrc.local へ）
+  cargo/config.toml         # ~/.cargo/config.toml の正本（中間成果物を ~/.cargo/build.noindex に集約）
+  storage/storage-maintenance.sh  # 内蔵SSDの自動整理と容量レポート（launchd で週1回）
 ```
 
 ## アプリ開発の標準手順（shared-references/dev/）
@@ -55,7 +57,10 @@ ln -sfn ~/Github/dotfiles/instructions ~/.claude/instructions
 ln -sfn ~/Github/dotfiles/AGENTS.md ~/.codex/AGENTS.md
 ln -sfn ~/Github/dotfiles/instructions ~/.codex/instructions
 ln -sfn ~/Github/dotfiles/zsh/.zshrc ~/.zshrc
+ln -sfn ~/Github/dotfiles/cargo/config.toml ~/.cargo/config.toml
 ```
+
+内蔵SSDの自動整理（`storage/storage-maintenance.sh`）は `~/Library/LaunchAgents/com.ikotera.storage-maintenance.plist` から毎週日曜12時に起動する。消すのは再ビルドで戻るものだけ（14日未使用か20GB超の cargo build-dir、30日未使用の `target`）。ログは `~/Library/Logs/storage-maintenance/storage.log`、空きが40GB未満なら通知する。
 
 API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshrc.local`（`chmod 600`）に書く。`~/.zshrc` の末尾で存在すれば読み込まれる。
 
