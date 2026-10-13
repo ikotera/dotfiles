@@ -26,6 +26,7 @@ dotfiles/
   zsh/.zshrc                # zsh 設定の正本（~/.zshrc から symlink。秘密は ~/.zshrc.local へ）
   cargo/config.toml         # ~/.cargo/config.toml の正本（中間成果物を ~/.cargo/build.noindex に集約）
   storage/storage-maintenance.sh  # 内蔵SSDの自動整理と容量レポート（launchd で週1回）
+  storage/spotlight-monitor.sh    # CoreSpotlight の Journals 肥大を手動で確認（要フルディスクアクセス）
 ```
 
 ## アプリ開発の標準手順（shared-references/dev/）
@@ -61,6 +62,8 @@ ln -sfn ~/Github/dotfiles/cargo/config.toml ~/.cargo/config.toml
 ```
 
 内蔵SSDの自動整理（`storage/storage-maintenance.sh`）は `~/Library/LaunchAgents/com.ikotera.storage-maintenance.plist` から毎週日曜12時に起動する。消すのは再ビルドで戻るものだけ（14日未使用か20GB超の cargo build-dir、30日未使用の `target`）。ログは `~/Library/Logs/storage-maintenance/storage.log`、空きが40GB未満なら通知する。
+
+macOS 27.0 以降、`~/Library/Metadata/CoreSpotlight/DocumentProcessing/PipelineStorage/Embedding/Journals` が処理されずに毎日 100MB 前後ずつ増える。月1回程度 `storage/spotlight-monitor.sh` を手動で実行して容量・日別増加・目安（15GB）への到達予測を確認し、履歴は `~/Library/Logs/storage-maintenance/spotlight-history.csv` に残る。目安を超えたら CoreSpotlight のリセットを検討する。
 
 API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshrc.local`（`chmod 600`）に書く。`~/.zshrc` の末尾で存在すれば読み込まれる。
 
