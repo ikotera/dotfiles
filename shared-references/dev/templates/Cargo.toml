@@ -1,0 +1,33 @@
+# <project> の Cargo ワークスペース（dotfiles/shared-references/dev/stack-selection.md の決まりごと）
+[workspace]
+resolver = "2"
+members = ["crates/<p>-core", "crates/<p>-mac", "crates/<p>-cli", "crates/<p>-app"]
+# GUI を含まないクレートだけを既定のビルド・テスト対象にする（cargo test を速く保つ）
+default-members = ["crates/<p>-core", "crates/<p>-mac", "crates/<p>-cli"]
+
+[workspace.package]
+# 版の唯一の正本。scripts/bump_version.sh で上げる（versioning.md）
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+
+[workspace.lints.rust]
+# OS の API を呼ぶモジュールだけ #![allow(unsafe_code)] とし、理由を書く
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# 各クレートの Cargo.toml には次を書く:
+#   [package]
+#   version.workspace = true
+#   edition.workspace = true
+#   rust-version.workspace = true
+#   license.workspace = true
+#   [lints]
+#   workspace = true

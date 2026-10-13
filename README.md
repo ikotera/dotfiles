@@ -16,6 +16,7 @@ dotfiles/
     gemini-instructions.md  # Gemini CLI 固有の規約
   skills/<skill-name>/      # Claude Code の Skill（references/ は shared-references/ への相対 symlink）
   shared-references/        # skills から共有参照される規約・テンプレート類の正本
+    dev/                    # アプリ開発の規約（原則・ワークフロー・版・技術選定・macOS の見た目）とテンプレート
   adapters/claude/stop_hook.py   # Stop フック用アダプタ（policy/check_formatting.py を橋渡し）
   policy/check_formatting.py     # 出力整形ルールの検査本体（ベンダ非依存）
   bin/
@@ -24,6 +25,19 @@ dotfiles/
     verify_cloud_setup.sh   # クラウドセッションでの動作確認
   zsh/.zshrc                # zsh 設定の正本（~/.zshrc から symlink。秘密は ~/.zshrc.local へ）
 ```
+
+## アプリ開発の標準手順（shared-references/dev/）
+
+file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化した、AI エージェント共通の開発手順。Claude Code では skill `plan-driven-dev` から、Codex・Gemini では `instructions/` の規約から参照する。
+
+| ファイル | 内容 |
+|---|---|
+| `principles.md` | 省資源・心地よさ・堅牢性・技術選定・見た目・版・知識の循環の原則と、それぞれの確かめ方 |
+| `workflow.md` | 立ち上げ、1回分の開発（要望 → ステップ → 実装 → 確認 → 版 → push → 報告）、knowledge-base の使い方、distill の時機 |
+| `versioning.md` | ステップ単位の SemVer、メイン画面への版の表示、`bump_version.sh` |
+| `stack-selection.md` | Rust コア＋フロントエンド（SwiftUI・GPUI・Tauri 等）の選び方、ワークスペースの決まりごと |
+| `macos-look-and-feel.md` | 参照アプリ（Finder 等）に合わせるためのチェック項目 |
+| `templates/` | `PLAN.md`・`AGENTS.md`・`CLAUDE.md`・`Cargo.toml`・`gitignore`・`scripts/`（`bump_version.sh`・`bundle.sh`・`make_icon.swift`） |
 
 ## CLAUDE.md と AGENTS.md の関係
 
