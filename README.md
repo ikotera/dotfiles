@@ -14,14 +14,14 @@ dotfiles/
   instructions/
     shared-instructions.md  # 全ツール共通の出力整形・回答規約（正本）
     gemini-instructions.md  # Gemini CLI 固有の規約
-  skills/<skill-name>/      # Claude Code の Skill（references/ は shared-references/ への相対 symlink）
+  skills/<skill-name>/      # Claude Code の Skill（references/ は shared-references/ への相対 symlink。クラウドでは実体化してコピー）
   shared-references/        # skills から共有参照される規約・テンプレート類の正本
     dev/                    # アプリ開発の規約（原則・ワークフロー・版・技術選定・macOS の見た目）とテンプレート
   adapters/claude/stop_hook.py   # Stop フック用アダプタ（policy/check_formatting.py を橋渡し）
   policy/check_formatting.py     # 出力整形ルールの検査本体（ベンダ非依存）
   bin/
     sync.sh                 # ローカル(macOS)の自動同期
-    cloud_setup.sh          # クラウド環境: ~/.claude へのリンクを張る
+    cloud_setup.sh          # クラウド環境: ~/.claude へ CLAUDE.md・instructions をリンクし、skill を実体化してコピー
     verify_cloud_setup.sh   # クラウドセッションでの動作確認
   zsh/.zshrc                # zsh 設定の正本（~/.zshrc から symlink。秘密は ~/.zshrc.local へ）
   cargo/config.toml         # ~/.cargo/config.toml の正本（中間成果物を ~/.cargo/build.noindex に集約）
@@ -53,7 +53,8 @@ file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化�
 ```bash
 git clone https://github.com/ikotera/dotfiles.git ~/Github/dotfiles
 ln -sfn ~/Github/dotfiles ~/.agents
-ln -sfn ~/Github/dotfiles/skills ~/.claude/skills
+mkdir -p ~/.claude/skills
+for s in ~/Github/dotfiles/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
 ln -sfn ~/Github/dotfiles/instructions ~/.claude/instructions
 ln -sfn ~/Github/dotfiles/AGENTS.md ~/.codex/AGENTS.md
 ln -sfn ~/Github/dotfiles/instructions ~/.codex/instructions
@@ -66,6 +67,8 @@ ln -sfn ~/Github/dotfiles/cargo/config.toml ~/.cargo/config.toml
 macOS 27.0 以降、`~/Library/Metadata/CoreSpotlight/DocumentProcessing/PipelineStorage/Embedding/Journals` が処理されずに毎日 100MB 前後ずつ増える。月1回程度 `storage/spotlight-monitor.sh` を手動で実行して容量・日別増加・目安（15GB）への到達予測を確認し、履歴は `~/Library/Logs/storage-maintenance/spotlight-history.csv` に残る。目安を超えたら CoreSpotlight のリセットを検討する。
 
 API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshrc.local`（`chmod 600`）に書く。`~/.zshrc` の末尾で存在すれば読み込まれる。
+
+`~/.claude/skills` はディレクトリごとリンクせず、実ディレクトリの中に skill を1件ずつリンクする。Claude デスクトップアプリが `~/.claude/skills/synced/` に Anthropic 製 skill（著作権表示つき・再配布不可）を同期するため、ディレクトリごとリンクするとそれがこのリポジトリに入り、自動同期で公開されてしまう（2026-09〜10 に実際に起きた）。念のため `.gitignore` にも `skills/synced/` を入れてある。
 
 `~/.claude/CLAUDE.md` は symlink ではなく実ファイルにする（`rtk` 未導入なら1行目のみでよい）。
 
@@ -85,7 +88,7 @@ EOF
 
 ```bash
 #!/bin/bash
-# rev: 1
+# rev: 2
 rm -rf "$HOME/dotfiles"
 git clone --quiet --depth 1 https://github.com/ikotera/dotfiles.git "$HOME/dotfiles" \
   && bash "$HOME/dotfiles/bin/cloud_setup.sh" \
@@ -96,7 +99,8 @@ git clone --quiet --depth 1 https://github.com/ikotera/dotfiles.git "$HOME/dotfi
 - 実際のクラウドセッションで、次の3点を確認済み（2026-09-20）。
   - ユーザー全体の `~/.claude/CLAUDE.md` が、別リポジトリのセッションでも読み込まれる。
   - セットアップスクリプトは `CLAUDE.md` の読み込みより前に完了し、`@import` も解決される。
-  - skills は `~/.claude/skills/<名前>` に1件ずつリンクすれば自動検出される（`~/.claude/skills/` には標準skillが入っているので、ディレクトリごと置き換えない）。
+  - skills は `~/.claude/skills/<名前>` に1件ずつ置けば自動検出される（`~/.claude/skills/` には標準skillが入っているので、ディレクトリごと置き換えない）。
+- **クラウドでは skill を symlink ではなく、`cp -RL` で実体化したコピーとして置く**（2026-10-13 に変更）。symlink のままだと `references/vocabulary.md` 等が読めなかった。`references/` 内のファイルは `../../../shared-references/...` への相対 symlink で、カーネルは `~/dotfiles/skills/<名前>/references/` 基準で正しく解決するが、ツールがこれを見かけ上のパス `~/.claude/skills/<名前>/references/` 基準で文字列として解決すると `~/.claude/shared-references/`（存在しない）を指す。また作業ディレクトリ外の `~/dotfiles` が読み取りの許可範囲外になる可能性もある。コピーにすれば規約ファイルが skill のディレクトリ内の実ファイルになり、どちらの場合も読める。環境は `rev` ごとに作り直されるので、コピーでも古くなる心配は symlink と変わらない。
 - **環境はキャッシュされ、セッションごとにはスクリプトが再実行されない。** dotfilesを更新したら、スクリプトの `# rev: N` を上げて（内容を変えて）環境を再構築させる。スクリプトを書き換えると再構築される点は確認済みだが、キャッシュの有効期限そのものは未確認。
 
 ### 動作確認
@@ -107,7 +111,7 @@ git clone --quiet --depth 1 https://github.com/ikotera/dotfiles.git "$HOME/dotfi
 bash ~/dotfiles/bin/verify_cloud_setup.sh
 ```
 
-`~/.claude` 配下のリンク、skillの認識、壊れたsymlink、RTK参照の混入、dotfilesの鮮度（リモートより古ければ警告）を確認し、問題があれば `NG` を表示して `exit 1` になる。
+`~/.claude` 配下のリンク、skillの認識（実体のコピーで symlink が残っていないか、references が dotfiles と一致するか）、RTK参照の混入、dotfilesの鮮度（リモートより古ければ警告）を確認し、問題があれば `NG` を表示して `exit 1` になる。
 
 ## 自動同期（macOS）
 

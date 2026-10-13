@@ -34,14 +34,22 @@ echo "=== 3. skills ==="
 if [ -n "$DEST" ] && [ -d "$DEST/skills" ]; then
   for s in "$DEST"/skills/*/; do
     name="$(basename "$s")"
-    if [ -f "$CLAUDE_DIR/skills/$name/SKILL.md" ]; then
-      ok "skill $name が ~/.claude/skills/$name/SKILL.md として読める"
-    else
+    [ -f "$s/SKILL.md" ] || continue
+    target="$CLAUDE_DIR/skills/$name"
+    if [ ! -f "$target/SKILL.md" ]; then
       ng "skill $name が ~/.claude/skills に見えていない"
+      continue
+    fi
+    links="$(find "$target" -type l 2>/dev/null | wc -l | tr -d ' ')"
+    if [ -L "$target" ] || [ "$links" != "0" ]; then
+      ng "skill $name に symlink が残っている（references がツールから見えない原因になる）"
+    elif [ -d "$s/references" ] && ! diff -rq "$s/references" "$target/references" >/dev/null 2>&1; then
+      ng "skill $name の references が dotfiles と食い違う"
+    else
+      refs="$(find "$target/references" -type f 2>/dev/null | wc -l | tr -d ' ')"
+      ok "skill $name は実体のコピー（references の実ファイル: $refs 件）"
     fi
   done
-  broken="$(find -L "$DEST/skills" -type l 2>/dev/null | wc -l | tr -d ' ')"
-  [ "$broken" = "0" ] && ok "skills 内の symlink に壊れたものなし" || ng "skills 内に壊れた symlink が $broken 件ある"
 fi
 
 echo ""
@@ -56,7 +64,7 @@ echo ""
 echo "=== 5. dotfiles の鮮度（環境がキャッシュされている場合の遅れ） ==="
 if [ -n "$DEST" ] && [ -d "$DEST/.git" ]; then
   local_head="$(git -C "$DEST" rev-parse HEAD 2>/dev/null)"
-  remote_head="$(git -C "$DEST" ls-remote origin HEAD 2>/dev/null | cut -f1 || true)"
+  remote_head="$(git -C "$DEST" ls-remote origin HEAD 2>/dev/null | head -1 | cut -f1 || true)"
   if [ -z "$remote_head" ]; then
     warn "リモートのHEADを取得できなかったため鮮度は未確認（ローカル: ${local_head:0:7}）"
   elif [ "$local_head" = "$remote_head" ]; then
