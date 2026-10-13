@@ -45,7 +45,7 @@ awk -v next_version="$next" '
 ' Cargo.toml >"$tmp"
 mv "$tmp" Cargo.toml
 
-# Cargo.lock の各クレートの版を合わせる（ネットワークに出ない）
+# Cargo.lock の各クレートの版を合わせる（まずオフラインで試し、足りない物があればダウンロードする）
 cargo metadata --format-version 1 --offline >/dev/null 2>&1 || cargo metadata --format-version 1 >/dev/null 2>&1
 
 git add Cargo.toml
