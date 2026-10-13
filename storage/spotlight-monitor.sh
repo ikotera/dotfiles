@@ -30,7 +30,7 @@ files=$(find "$JOURNALS" -type f | wc -l | tr -d ' ')
 oldest=$(find "$JOURNALS" -type f -exec stat -f %Sm -t %Y-%m-%d {} + | sort | head -1)
 today=$(date +%Y-%m-%d)
 
-echo "== CoreSpotlight 容量（$today）"
+echo "== CoreSpotlight 容量（${today}）"
 printf '  全体           %s\n' "$(fmt "$total_kb")"
 printf '  Embedding/Journals %s（%s ファイル、最古 %s）\n' "$(fmt "$journal_kb")" "$files" "${oldest:--}"
 
@@ -55,7 +55,7 @@ if [ -n "$prev" ]; then
   days=$(( ( $(date -j -f %Y-%m-%d "$today" +%s) - $(date -j -f %Y-%m-%d "$pdate" +%s) ) / 86400 ))
   diff_kb=$(( journal_kb - pjkb ))
   if [ "$diff_kb" -ge 0 ]; then sign="+"; else sign="-"; fi
-  echo "== 前回（$pdate、${days}日前）から: Journals ${sign}$(fmt "${diff_kb#-}")"
+  echo "== 前回（${pdate}、${days}日前）から: Journals ${sign}$(fmt "${diff_kb#-}")"
   [ "$diff_kb" -lt 0 ] && echo "  減っています。macOS 側で処理が進んだか、リセットされた可能性があります。"
 else
   echo "== 初回の記録です（次回から前回比を表示）"

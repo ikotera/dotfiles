@@ -37,7 +37,7 @@ if [ -z "${skip_clean:-}" ]; then
       idle=$(( (now - $(last_build "$ws")) / 86400 ))
       size_gb=$(( $(du -sk "$ws" | cut -f1) / 1048576 ))
       if [ "$idle" -ge "$BUILD_IDLE_DAYS" ] || [ "$size_gb" -ge "$BUILD_CAP_GB" ]; then
-        echo "削除: $ws（${idle}日未使用, ${size_gb}GB）"
+        echo "削除: ${ws}（${idle}日未使用, ${size_gb}GB）"
         rm -rf "$ws"
       fi
     done
@@ -48,7 +48,7 @@ if [ -z "${skip_clean:-}" ]; then
     t="$(dirname "$tag")"
     idle=$(( (now - $(last_build "$t")) / 86400 ))
     if [ "$idle" -ge "$TARGET_IDLE_DAYS" ]; then
-      echo "削除: $t（${idle}日未使用, $(du -sh "$t" | cut -f1)）"
+      echo "削除: ${t}（${idle}日未使用, $(du -sh "$t" | cut -f1)）"
       rm -rf "$t"
     fi
   done < <(find "$HOME/Github" -maxdepth 5 -type f -name CACHEDIR.TAG -path '*/target/CACHEDIR.TAG' 2>/dev/null)
