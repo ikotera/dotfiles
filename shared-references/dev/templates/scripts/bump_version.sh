@@ -53,4 +53,4 @@ git add Cargo.toml
 [[ -f PLAN.md ]] && git add PLAN.md
 git commit -m "v$next: $summary"
 git tag -a "v$next" -m "v$next: $summary"
-echo "版: v$current → v$next（タグ v$next）。push: git push origin main --follow-tags"
+echo "版: v${current} → v${next}（タグ v${next}）。push: git push origin main --follow-tags"
