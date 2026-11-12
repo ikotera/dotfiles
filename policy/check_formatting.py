@@ -13,14 +13,15 @@ check_formatting.py — 出力整形チェッカ「本体」（ベンダ非依�
 本体は「テキストを受け取り、違反を返す」ことだけに責任を持つ。
 → 3社で共有するのはこのファイル。各社で書くのは薄いアダプタだけ。
 
-検査ルール（Claude Code の描画規約に対応 / shared-instructions.md と整合）:
+検査ルール（Claude Code デスクトップ版 Code タブの描画に対応 / CLAUDE.md と整合。2026-11-12 実測）:
   1. ```mermaid フェンス … この環境では図にならず生コード化するため禁止（SVGに置換）
-  2. インライン数式 $...$ … 文中の単一ドル数式は描画されないため禁止
-                            （$$...$$ の独立ブロックはOK。なので除外する）
+  2. インライン数式 $...$ … 区切りの内側が61文字以上だと描画されないため禁止
+                            （60文字以内はOK。$$...$$ の独立ブロックは除外する）
+  3. \[...\] の独立数式 … バックスラッシュが落ちて生テキスト化するため禁止（$$...$$ に置換）
 
 チューニング:
   環境変数 FORMAT_CHECK_STRICT=1 を立てると、LaTeX らしさに関係なく
-  すべての $...$ を違反として扱う（通貨記号などの誤検出を許容してでも厳格にしたい場合）。
+  61文字以上の $...$ を違反として扱う（通貨記号などの誤検出を許容してでも厳格にしたい場合）。
 """
 import os
 import re
@@ -38,6 +39,10 @@ DISPLAY_MATH = re.compile(r"\$\$.*?\$\$", re.DOTALL)
 INLINE_MATH = re.compile(r"(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)")
 # LaTeX らしさのシグナル（バックスラッシュ命令・上付き・下付き・波括弧）
 LATEX_SIGNAL = re.compile(r"[\\^_{}]")
+# Code タブがインライン数式として描画する、区切りの内側の最大文字数
+INLINE_MAX = 60
+# \[ ... \] の独立数式の開始（行頭、インデント可）
+BRACKET_DISPLAY = re.compile(r"^[ \t]*\\\[", re.MULTILINE)
 
 STRICT = os.environ.get("FORMAT_CHECK_STRICT") == "1"
 
@@ -72,14 +77,22 @@ def check(text: str):
     stripped = DISPLAY_MATH.sub(" ", stripped)
     for m in INLINE_MATH.finditer(stripped):
         content = m.group(1)
+        if len(content) <= INLINE_MAX:
+            continue
         if STRICT or LATEX_SIGNAL.search(content):
-            snippet = m.group(0)
-            if len(snippet) > 60:
-                snippet = snippet[:57] + "..."
+            snippet = m.group(0)[:57] + "..."
             violations.append(
-                f"[inline-math] 文中の単一 $...$ は描画されません: {snippet}  "
-                "→ $$...$$ を単独行に置くか、文章へ言い換えてください。"
+                f"[inline-math] 文中の $...$ が{len(content)}文字あり、{INLINE_MAX}文字を超えると描画されません: "
+                f"{snippet}  → $$...$$ を単独行に置くか、式を短く分けてください。"
             )
+
+    # 3) \[...\] の独立数式（コードを除いた残りを検査）
+    for m in BRACKET_DISPLAY.finditer(stripped):
+        line_no = stripped.count("\n", 0, m.start()) + 1
+        violations.append(
+            f"[bracket-math] {line_no}行目付近（コード除外後）: \\[...\\] は Claude Code で"
+            "描画されません。$$...$$ を単独行に置いてください。"
+        )
 
     return violations
 

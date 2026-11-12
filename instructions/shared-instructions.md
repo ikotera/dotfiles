@@ -66,8 +66,8 @@
 
 ## 数式表示の規約（実行環境で分岐）
 数式は LaTeX / MathJax 寄りの記法で表示する。デリミタは**実行中のツールで切り替える**。
-これは Claude Code 側のレンダリング不具合（`\(...\)` `\[...\]` 単一 `$...$`・文中 `$$...$$` が描画されない）への暫定対応。アプリ修正後は LaTeX 記法へ統一して本分岐を撤去する。
-参照: https://github.com/anthropics/claude-code/issues/65777
+Claude Code（デスクトップ版 Code タブ）は `$...$`（60文字以内）と `$$...$$` を描画するが、`\[...\]` は描画しない（2026-11-12 実測）。Claude Code では dotfiles の `CLAUDE.md` の規約に従う。
+参照: https://github.com/anthropics/claude-code/issues/102139 、https://github.com/anthropics/claude-code/issues/92152
 
 共通ルール:
 - 数式は LaTeX / MathJax 寄りの記法で書く。
