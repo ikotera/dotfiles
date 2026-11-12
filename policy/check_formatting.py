@@ -14,10 +14,9 @@ check_formatting.py — 出力整形チェッカ「本体」（ベンダ非依�
 → 3社で共有するのはこのファイル。各社で書くのは薄いアダプタだけ。
 
 検査ルール（Claude Code デスクトップ版 Code タブの描画に対応 / CLAUDE.md と整合。2026-11-12 実測）:
-  1. ```mermaid フェンス … この環境では図にならず生コード化するため禁止（SVGに置換）
-  2. インライン数式 $...$ … 区切りの内側が61文字以上だと描画されないため禁止
+  1. インライン数式 $...$ … 区切りの内側が61文字以上だと描画されないため禁止
                             （60文字以内はOK。$$...$$ の独立ブロックは除外する）
-  3. \[...\] の独立数式 … バックスラッシュが落ちて生テキスト化するため禁止（$$...$$ に置換）
+  2. \[...\] の独立数式 … バックスラッシュが落ちて生テキスト化するため禁止（$$...$$ に置換）
 
 チューニング:
   環境変数 FORMAT_CHECK_STRICT=1 を立てると、LaTeX らしさに関係なく
@@ -27,8 +26,6 @@ import os
 import re
 import sys
 
-# 行頭（インデント可）の ```mermaid フェンス
-MERMAID_FENCE = re.compile(r"^[ \t]*```[ \t]*mermaid\b", re.MULTILINE | re.IGNORECASE)
 # フェンス行（``` または ~~~）。コードブロックの開閉判定に使う
 FENCE_LINE = re.compile(r"^[ \t]*(```|~~~)")
 # インラインコードスパン `...`
@@ -49,7 +46,7 @@ STRICT = os.environ.get("FORMAT_CHECK_STRICT") == "1"
 
 def remove_fenced_blocks(text: str) -> str:
     """フェンス付きコードブロックの中身を取り除く。
-    コード内の $ や ``` を数式・mermaid と誤検出しないため。"""
+    コード内の $ や \[ を数式と誤検出しないため。"""
     out, in_fence = [], False
     for line in text.splitlines():
         if FENCE_LINE.match(line):
@@ -63,15 +60,7 @@ def remove_fenced_blocks(text: str) -> str:
 def check(text: str):
     violations = []
 
-    # 1) mermaid フェンス（元テキストのまま、行番号付きで報告）
-    for m in MERMAID_FENCE.finditer(text):
-        line_no = text.count("\n", 0, m.start()) + 1
-        violations.append(
-            f"[mermaid] {line_no}行目付近: ```mermaid は Claude Code では図にならず"
-            "生コード化します。SVG（show_widget）に置き換えてください。"
-        )
-
-    # 2) インライン数式（コード・独立ブロックを除いた残りを検査）
+    # 1) インライン数式（コード・独立ブロックを除いた残りを検査）
     stripped = remove_fenced_blocks(text)
     stripped = INLINE_CODE.sub(" ", stripped)
     stripped = DISPLAY_MATH.sub(" ", stripped)
@@ -86,7 +75,7 @@ def check(text: str):
                 f"{snippet}  → $$...$$ を単独行に置くか、式を短く分けてください。"
             )
 
-    # 3) \[...\] の独立数式（コードを除いた残りを検査）
+    # 2) \[...\] の独立数式（コードを除いた残りを検査）
     for m in BRACKET_DISPLAY.finditer(stripped):
         line_no = stripped.count("\n", 0, m.start()) + 1
         violations.append(

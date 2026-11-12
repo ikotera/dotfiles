@@ -1,6 +1,6 @@
 # 出力整形規約（Claude Code デスクトップ版 Code タブ。2026-11-12 実測）
 
-前提: skins mod の数式描き直しは無効にしておく（`/skin math off`）。有効だと、すべての数式が「MATH」見出し付きの文字の積み上げに描き直されて崩れる。
+前提: skins mod の数式と図表の描き直しは無効にしておく（`/skin math off`、`/skin charts off`）。有効だと、数式は「MATH」見出し付きの文字の積み上げに、mermaid は文字で組んだ絵に描き直されて崩れる。
 
 - インライン数式は `$...$` を使う。区切りの内側は **60文字以内**にする（61文字以上は生テキストのまま表示される。anthropics/claude-code issue 102139）。長い式は独立式にする。
 - `\(...\)` も描画されるが、`$...$` に統一する（リスト項目内でバックスラッシュが落ちる報告がある）。
@@ -8,7 +8,7 @@
 - `\[...\]` は使わない（バックスラッシュが落ちて `[ \frac{a}{b} ]` のような生テキストになる）。
 - `\tag{}` は未検証。番号が要るなら式の外に「(1)」とテキストで書く。
 - 独立式の中の `\{` `\}` `\\`（cases・行列）は崩れる報告がある（issue 92152）。`\lbrace` `\rbrace` を使うか、箇条書きに書き換える。
-- mermaid は禁止（`instructions/shared-instructions.md` の図解規約に従う）。
+- 図は ```mermaid フェンスで描いてよい（flowchart・pie・sequenceDiagram が図になることを実測。詳細は `instructions/shared-instructions.md` の図解規約）。
 
 例:
 

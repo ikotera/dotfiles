@@ -15,7 +15,9 @@
 - テーブル = Markdown 表（全環境で描画される）。
 - フロー図・図解（実行環境で分岐）:
   - **Codex / ブラウザ等 mermaid 対応環境**: ```mermaid フェンスを使う。
-  - **Claude Code**: ```mermaid は**図にならず生コードのまま表示される**ため使わない。図が要るときは `mcp__visualize__show_widget` の **SVG** で描く（ダークモード対応・`viewBox="0 0 680 H"`・配色は `c-blue` 等の ramp クラス、`role="img"`＋`<title>`/`<desc>` を付ける）。Markdown 表は正常に描画されるので、表で済むものは表にする。
+  - **Claude Code デスクトップ版（Code タブ）**: ```mermaid フェンスを使う（flowchart・pie・sequenceDiagram が図になることを 2026-11-12 に実測。skins mod の図表描き直しは `/skin charts off` で無効にしておく前提）。mermaid で表せない図だけ `mcp__visualize__show_widget` の **SVG** で描く（ダークモード対応・`viewBox="0 0 680 H"`・配色は `c-blue` 等の ramp クラス、`role="img"`＋`<title>`/`<desc>` を付ける）。
+  - **Claude Code CLI（ターミナル）**: ```mermaid は生コードのまま表示されるため、図は SVG で描く。
+  - 表で済むものは Markdown 表にする（全環境で描画される）。
 - インライン出力時のフェンス: ファイルをチャットに1ブロックで出力する場合、全体を「本文の最長フェンスより長いフェンス」で囲む。本文に3連 ``` がある場合は全体を4連で囲み内側は3連のまま（内側のフェンスが外側を途中で閉じて崩れるのを防ぐ）。例:
 
 `````text
