@@ -70,11 +70,33 @@ fi
 echo "==> sync: craft-fonts @ ${FONTS_REF:0:8}"
 sync_repo "$FONTS" "$FONTS_URL" "$FONTS_REF"
 
+# ---- ローカルパッチ（bin/patches/gridcraft-*.patch）: ビルドの間だけ当て、終了時に必ず戻す ----------
+# 本家で直った（パッチが当たらなくなった）ものは警告して飛ばす。不要になったらファイルを消す。
+PATCH_DIR="$(cd "$(dirname "$(readlink "$0" || echo "$0")")" && pwd)/patches"
+APPLIED=()
+revert_patches() {
+  local p
+  for p in ${APPLIED[@]+"${APPLIED[@]}"}; do git -C "$DIR" apply -R "$p" || echo "!! 戻せませんでした: $p" >&2; done
+  APPLIED=()
+}
+trap revert_patches EXIT
+for p in "$PATCH_DIR"/gridcraft-*.patch; do
+  [ -f "$p" ] || continue
+  if git -C "$DIR" apply --check "$p" 2>/dev/null; then
+    git -C "$DIR" apply "$p"
+    APPLIED+=("$p")
+    echo "==> patch: $(basename "$p")"
+  else
+    echo "warning: $(basename "$p") は当たりません（本家で修正済みか、コードが変わった）。当てずに続行します。" >&2
+  fi
+done
+
 # ---- build: 公式の packaging/macos/package.sh（簡易署名, この Mac の CPU 向け） -------------------
 ARCH="$(uname -m)"
 [ "$ARCH" = arm64 ] && ARCH=aarch64
 echo "==> build: package.sh --arch $ARCH (CRAFT_FONTS_REQUIRED=1)"
 CRAFT_FONTS_DIR="$FONTS" CRAFT_FONTS_REQUIRED=1 "$DIR/packaging/macos/package.sh" --arch "$ARCH"
+revert_patches
 APP="$DIR/target/macos-package/GridCraft.app"
 echo "==> 完了: $APP"
 echo "    CLI: $DIR/target/$ARCH-apple-darwin/release/gridcraft-cli"

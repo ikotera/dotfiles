@@ -1,0 +1,14 @@
+diff --git a/crates/ui-egui/src/app/fonts.rs b/crates/ui-egui/src/app/fonts.rs
+index 76a829a9..fbd13c88 100644
+--- a/crates/ui-egui/src/app/fonts.rs
++++ b/crates/ui-egui/src/app/fonts.rs
+@@ -74,6 +74,9 @@ impl SheetApp {
+     /// Applies the pending font set. New fonts apply from the next frame on: paint nothing until
+     /// then. Startup always proceeds: without it a queued step would be re-offered forever.
+     fn start_font_setup(&mut self, ctx: &egui::Context) {
++        // Local patch (storytold/gridcraft#3032, #974): the desktop app never called
++        // setup_context, so the installed-font scan never started. Idempotent.
++        fonts::start_scan();
+         if self.fonts_set {
+             self.fonts_ready = true;
+             // The new set is active now: chart text was measured with the old one.
