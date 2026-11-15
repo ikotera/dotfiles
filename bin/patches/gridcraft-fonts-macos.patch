@@ -1,0 +1,256 @@
+diff --git a/crates/ui-egui/src/fonts.rs b/crates/ui-egui/src/fonts.rs
+index da7dd57e..d8b46886 100644
+--- a/crates/ui-egui/src/fonts.rs
++++ b/crates/ui-egui/src/fonts.rs
+@@ -76,6 +76,7 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
+             if let Some(h) = &home {
+                 dirs.push(h.join("Library/Fonts"));
+             }
++            dirs.extend(macos_asset_font_dirs());
+         } else if cfg!(windows) {
+             let root = std::env::var_os("WINDIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows"));
+             dirs.push(root.join("Fonts"));
+@@ -93,6 +94,54 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
+     }
+ }
+ 
++/// macOS keeps its downloadable fonts (YuGothic, YuMincho, Osaka, Klee, Tsukushi, Kyokasho…) as
++/// MobileAsset bundles, not in a Fonts folder: the ones downloaded on demand under
++/// `/System/Library/AssetsV2/com_apple_MobileAsset_Font*` and the ones shipped with the OS under
++/// `PreinstalledAssetsV2/InstallWithOs`. Only the `…_Font*` asset folders are returned, so the scan
++/// never walks the other (firmware, dictionary) assets.
++#[cfg(not(target_arch = "wasm32"))]
++fn macos_asset_font_dirs() -> Vec<PathBuf> {
++    let mut out: Vec<PathBuf> = Vec::new();
++    for root in ["/System/Library/AssetsV2", "/System/Library/AssetsV2/PreinstalledAssetsV2/InstallWithOs"] {
++        let Ok(entries) = std::fs::read_dir(root) else { continue };
++        let mut found: Vec<PathBuf> =
++            entries.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font")).map(|e| e.path()).collect();
++        found.sort();
++        out.extend(found);
++    }
++    out
++}
++
++/// A face's weight: the style name's when it names one (`"Bold"`, `"Light"`), else the font's own
++/// OS/2 `usWeightClass`, else 400. Japanese families name weights `W0`…`W9` (Hiragino Sans) or
++/// call every face `Regular` in its own file (YuGothic Medium/Bold), so without the OS/2 value all
++/// their faces read as 400 and the "regular" face was whichever file the scan met first, often a
++/// heavy one.
++#[cfg(not(target_arch = "wasm32"))]
++fn face_weight(style: &str, os2_weight: Option<u16>) -> f32 {
++    let named = style_weight(style);
++    if (named - 400.0).abs() >= 1.0 {
++        return named;
++    }
++    match os2_weight {
++        Some(w @ 1..=1000) => f32::from(w),
++        _ => 400.0,
++    }
++}
++
++/// The OS/2 `usWeightClass` of every face in `data`, by face index (`None` when a face has no
++/// readable OS/2 table). Damaged data yields nothing, never a panic.
++#[cfg(not(target_arch = "wasm32"))]
++fn file_weights(data: &[u8]) -> Vec<Option<u16>> {
++    use skrifa::raw::{FileRef, TableProvider};
++    let count = match FileRef::new(data) {
++        Ok(FileRef::Font(_)) => 1,
++        Ok(FileRef::Collection(c)) => c.len(),
++        Err(_) => return Vec::new(),
++    };
++    (0..count).map(|i| skrifa::FontRef::from_index(data, i).ok().and_then(|f| f.os2().ok()).map(|t| t.us_weight_class())).collect()
++}
++
+ /// Weight implied by a style name (`"Bold"` → 700, `"Light"` → 300).
+ #[cfg(not(target_arch = "wasm32"))]
+ fn style_weight(style: &str) -> f32 {
+@@ -191,8 +240,10 @@ pub fn scan_dirs(dirs: &[PathBuf]) -> Vec<Face> {
+                 continue;
+             }
+             let Some(data) = read_font(&path) else { continue };
++            let weights = file_weights(&data);
+             for (index, family, names, style) in file_faces(&data) {
+-                out.push(Face { family, names, path: path.clone(), index, weight: style_weight(&style), italic: style_italic(&style) });
++                let os2 = weights.get(index as usize).copied().flatten();
++                out.push(Face { family, names, path: path.clone(), index, weight: face_weight(&style, os2), italic: style_italic(&style) });
+             }
+         }
+     }
+@@ -256,7 +307,7 @@ fn faces_named(cat: &[Face], wanted: &str) -> Vec<Face> {
+             None => Vec::new(),
+         }
+     };
+-    v.sort_by(|a, b| a.weight.total_cmp(&b.weight).then(a.italic.cmp(&b.italic)).then(a.index.cmp(&b.index)));
++    v.sort_by(|a, b| a.weight.total_cmp(&b.weight).then(a.italic.cmp(&b.italic)).then(a.path.cmp(&b.path)).then(a.index.cmp(&b.index)));
+     v
+ }
+ 
+@@ -290,7 +341,8 @@ pub fn families() -> Vec<String> {
+     let mut out: Vec<String> = crate::ribbon::FONTS.iter().map(|s| s.to_string()).collect();
+     let Some(cat) = catalog_now() else { return out };
+     let mut seen: HashSet<String> = out.iter().map(|s| s.to_lowercase()).collect();
+-    let mut installed: Vec<String> = cat.iter().map(|f| f.family.clone()).collect();
++    // Names starting with `.` are the system's private UI faces (`.Hiragino Kaku Gothic Interface`).
++    let mut installed: Vec<String> = cat.iter().filter(|f| !f.family.starts_with('.')).map(|f| f.family.clone()).collect();
+     installed.sort_by_key(|a| a.to_lowercase());
+     installed.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+     for f in installed {
+@@ -301,6 +353,40 @@ pub fn families() -> Vec<String> {
+     out
+ }
+ 
++/// [`families`] as `(value, label)` rows for the ribbon's Font box: the value is the family name a
++/// cell stores, the label adds the family's local name when it has one in another script, e.g.
++/// `Hiragino Sans（ヒラギノ角ゴシック）`, so a Japanese name can be typed in the filter. Built once
++/// the scan has finished and kept, so the ribbon doesn't rebuild it every frame.
++pub fn family_choices() -> Vec<(String, String)> {
++    static CHOICES: OnceLock<Vec<(String, String)>> = OnceLock::new();
++    if let Some(c) = CHOICES.get() {
++        return c.clone();
++    }
++    let Some(cat) = catalog_now() else {
++        return families().into_iter().map(|f| (f.clone(), f)).collect();
++    };
++    CHOICES.get_or_init(|| choices_from(cat, families())).clone()
++}
++
++fn choices_from(cat: &[Face], families: Vec<String>) -> Vec<(String, String)> {
++    families
++        .into_iter()
++        .map(|family| {
++            let local = cat
++                .iter()
++                .filter(|f| f.family.eq_ignore_ascii_case(&family))
++                .flat_map(|f| f.names.iter())
++                .find(|n| !n.is_ascii() && !n.chars().any(|c| c.is_ascii_digit()))
++                .or_else(|| cat.iter().filter(|f| f.family.eq_ignore_ascii_case(&family)).flat_map(|f| f.names.iter()).find(|n| !n.is_ascii()));
++            let label = match local {
++                Some(l) => format!("{family}（{l}）"),
++                None => family.clone(),
++            };
++            (family, label)
++        })
++        .collect()
++}
++
+ /// The egui family name for one role of one family: `fnt:{family}:{b|n}{i|n}`.
+ pub fn role_key(family: &str, bold: bool, italic: bool) -> String {
+     format!("fnt:{family}:{}{}", if bold { 'b' } else { 'n' }, if italic { 'i' } else { 'n' })
+@@ -308,19 +394,36 @@ pub fn role_key(family: &str, bold: bool, italic: bool) -> String {
+ 
+ /// The face to use for a role, or `None` when the family has no faces. Missing bold/italic faces
+ /// fall back to the family's regular face, so every bound role has data behind it.
++///
++/// Weights are matched as CSS Fonts does: regular wants 400, then up to 500, then lighter, then
++/// heavier; bold wants 700 or heavier, then lighter. A family of `W3`/`W6` faces (Hiragino
++/// Kaku Gothic ProN) gets W3 and W6, one of `W0`…`W9` (Hiragino Sans) W4 and W7, never the
++/// heaviest face for regular text.
+ fn pick_face(faces: &[Face], bold: bool, italic: bool) -> Option<&Face> {
+-    let regular = || faces.iter().find(|f| !f.italic && (f.weight - 400.0).abs() < 1.0);
+-    let exact = |wanted_bold: bool, wanted_italic: bool| {
+-        faces.iter().find(|f| f.italic == wanted_italic && if wanted_bold { f.weight >= 600.0 } else { f.weight < 600.0 })
++    let target = if bold { 700.0 } else { 400.0 };
++    let upright = |f: &&Face| !f.italic;
++    let slanted = |f: &&Face| f.italic;
++    let in_style = |want_italic: bool| -> Vec<&Face> {
++        if want_italic { faces.iter().filter(slanted).collect() } else { faces.iter().filter(upright).collect() }
+     };
+-    (match (bold, italic) {
+-        (true, true) => exact(true, true).or_else(|| exact(true, false)).or_else(|| exact(false, true)),
+-        (true, false) => exact(true, false),
+-        (false, true) => exact(false, true),
+-        (false, false) => None,
+-    })
+-    .or_else(regular)
+-    .or_else(|| faces.first())
++    let candidates = {
++        let wanted = in_style(italic);
++        if wanted.is_empty() { in_style(!italic) } else { wanted }
++    };
++    closest_weight(&candidates, target).or_else(|| faces.first())
++}
++
++/// The face of `faces` nearest to `target` by the CSS Fonts weight-matching rules.
++fn closest_weight<'a>(faces: &[&'a Face], target: f32) -> Option<&'a Face> {
++    let at_least = |lo: f32, hi: f32| faces.iter().filter(|f| f.weight >= lo && f.weight <= hi).min_by(|a, b| a.weight.total_cmp(&b.weight)).copied();
++    let below = |hi: f32| faces.iter().filter(|f| f.weight < hi).max_by(|a, b| a.weight.total_cmp(&b.weight).then(b.path.cmp(&a.path))).copied();
++    if (400.0..=500.0).contains(&target) {
++        at_least(target, 500.0).or_else(|| below(target)).or_else(|| at_least(500.0, f32::MAX))
++    } else if target > 500.0 {
++        at_least(target, f32::MAX).or_else(|| below(target))
++    } else {
++        below(target + 0.5).or_else(|| at_least(target, f32::MAX))
++    }
+ }
+ 
+ /// A stable key for a face's font data, one per file and index: every name a family is bound under
+@@ -409,6 +512,53 @@ mod tests {
+         assert_eq!(style_weight("ExtraLight"), 200.0);
+     }
+ 
++    #[test]
++    fn os2_weight_is_used_when_the_style_name_has_none() {
++        // Hiragino Sans: style "W3"/"Regular", OS/2 300.
++        assert_eq!(face_weight("W3", Some(300)), 300.0);
++        assert_eq!(face_weight("Regular", Some(600)), 600.0);
++        // A style name that names a weight wins over the OS/2 value.
++        assert_eq!(face_weight("Bold", Some(400)), 700.0);
++        assert_eq!(face_weight("Regular", None), 400.0);
++        assert_eq!(face_weight("Regular", Some(0)), 400.0);
++        assert_eq!(face_weight("Regular", Some(5000)), 400.0);
++    }
++
++    #[test]
++    fn regular_text_never_takes_the_heaviest_face() {
++        // Hiragino Sans W0…W9, met by the scan in any order: regular is W4, bold W7.
++        let mut faces: Vec<Face> = [900.0, 100.0, 600.0, 300.0, 400.0, 700.0, 250.0, 500.0, 800.0, 200.0]
++            .iter()
++            .map(|w| face("Hiragino Sans", &["Hiragino Sans"], &format!("/f/W{}.ttc", (*w as u32) / 100), *w))
++            .collect();
++        faces.sort_by(|a, b| a.weight.total_cmp(&b.weight));
++        assert_eq!(pick_face(&faces, false, false).map(|f| f.weight), Some(400.0));
++        assert_eq!(pick_face(&faces, true, false).map(|f| f.weight), Some(700.0));
++        // Hiragino Kaku Gothic ProN / Mincho ProN: W3 and W6 only.
++        let faces = vec![face("Hiragino Mincho ProN", &[], "/f/m.ttc", 300.0), face("Hiragino Mincho ProN", &[], "/f/m.ttc", 600.0)];
++        assert_eq!(pick_face(&faces, false, false).map(|f| f.weight), Some(300.0));
++        assert_eq!(pick_face(&faces, true, false).map(|f| f.weight), Some(600.0));
++        // YuMincho: Medium (500), Demibold (600), Extrabold (800).
++        let faces =
++            vec![face("YuMincho", &[], "/f/y.ttc", 500.0), face("YuMincho", &[], "/f/y.ttc", 600.0), face("YuMincho", &[], "/f/y.ttc", 800.0)];
++        assert_eq!(pick_face(&faces, false, false).map(|f| f.weight), Some(500.0));
++        assert_eq!(pick_face(&faces, true, false).map(|f| f.weight), Some(800.0));
++        // A single heavy face is still used for every role.
++        let faces = vec![face("Black Only", &[], "/f/b.ttf", 900.0)];
++        assert_eq!(pick_face(&faces, false, false).map(|f| f.weight), Some(900.0));
++    }
++
++    #[test]
++    fn font_choices_show_the_local_name_and_hide_private_faces() {
++        let cat = vec![
++            face("Hiragino Sans", &["Hiragino Sans", "ヒラギノ角ゴシック", "Hiragino Sans W3", "ヒラギノ角ゴシック W3"], "/f/W3.ttc", 300.0),
++            face("Arial", &["Arial"], "/f/a.ttf", 400.0),
++        ];
++        let rows = choices_from(&cat, vec!["Arial".into(), "Hiragino Sans".into()]);
++        assert_eq!(rows[0], ("Arial".to_string(), "Arial".to_string()));
++        assert_eq!(rows[1], ("Hiragino Sans".to_string(), "Hiragino Sans（ヒラギノ角ゴシック）".to_string()));
++    }
++
+     #[test]
+     fn role_keys_are_stable_and_distinct() {
+         assert_eq!(role_key("Segoe UI", false, false), "fnt:Segoe UI:nn");
+diff --git a/crates/ui-egui/src/ribbon/home.rs b/crates/ui-egui/src/ribbon/home.rs
+index 7dd55f70..0e617d9b 100644
+--- a/crates/ui-egui/src/ribbon/home.rs
++++ b/crates/ui-egui/src/ribbon/home.rs
+@@ -578,7 +578,9 @@ fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {
+     let resp = ui.add_sized([150.0, 24.0], egui::Button::new(egui::RichText::new(&name).font(theme::ui_font(12.5))));
+     control_keytip(app, ui, &resp, "home.fontName");
+     let forced = invoke(app, "home.fontName");
+-    let items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();
++    // Every installed family (once the background scan is done), not only the standard names.
++    let choices = crate::fonts::family_choices();
++    let items: Vec<(&str, String)> = choices.iter().map(|(v, l)| (v.as_str(), l.clone())).collect();
+     if let ComboResult::Picked(value) = editable_combo(ui, &resp, "font", &name, &items, forced) {
+         act(app, "home.fontName", json!({"name": value}));
+     }
