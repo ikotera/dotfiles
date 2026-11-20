@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Follow Hermes subagent transcripts without spawning tail processes."""
+
+import argparse
+from datetime import datetime
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import sys
+import time
+
+
+DELEGATION_ID = re.compile(r"deleg_[0-9a-f]{8}")
+TASK_LOG = re.compile(r"task-([0-9]+)\.log")
+TERMINAL_CONTROLS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
+POLL_SECONDS = 2
+
+
+def delegations(root):
+    runs = []
+    try:
+        for path in root.iterdir():
+            if DELEGATION_ID.fullmatch(path.name):
+                try:
+                    info = path.lstat()
+                except FileNotFoundError:  # Hermes may prune a run during the scan.
+                    continue
+                if stat.S_ISDIR(info.st_mode):
+                    runs.append((info.st_mtime_ns, path))
+    except FileNotFoundError:  # Hermes creates the root on the first delegation.
+        pass
+    return sorted(runs, reverse=True)
+
+
+def task_logs(directory):
+    logs = []
+    try:
+        for path in directory.iterdir():
+            match = TASK_LOG.fullmatch(path.name)
+            if match and not path.is_symlink() and path.is_file():
+                logs.append((int(match[1]), path))
+    except FileNotFoundError:
+        pass
+    return [path for _, path in sorted(logs)]
+
+
+def display(text):
+    # Transcript content must not be able to issue terminal escape commands.
+    return TERMINAL_CONTROLS.sub(lambda m: f"\\x{ord(m[0]):02x}", text)
+
+
+def goal(path):
+    try:
+        with path.open(encoding="utf-8", errors="replace") as log:
+            for _ in range(6):  # Hermes writes the goal in the six-line dispatch header.
+                line = log.readline()
+                if line.startswith("goal: "):
+                    return display(line[6:].rstrip("\r\n"))
+    except FileNotFoundError:
+        pass
+    return "(no goal)"
+
+
+def show_list(root):
+    runs = delegations(root)[:10]
+    if not runs:
+        print("No delegation logs.")
+    for mtime, directory in runs:
+        logs = task_logs(directory)
+        updated = datetime.fromtimestamp(mtime // 10**9).astimezone()
+        count = len(logs)
+        print(f"{directory.name}  {updated:%Y-%m-%d %H:%M:%S %z}  {count} task{'s' if count != 1 else ''}")
+        for path in logs:
+            print(f"  [{path.stem}] {goal(path)}")
+
+
+class Output:
+    def __init__(self):
+        self.tty = sys.stdout.isatty()
+        self.status_visible = False
+        self.last_line = time.monotonic()
+
+    def clear_status(self):
+        if self.status_visible:
+            sys.stdout.write("\r\x1b[K")
+            sys.stdout.flush()
+            self.status_visible = False
+
+    def line(self, task, line):
+        self.clear_status()
+        print(f"[{task}] {display(line)}", flush=True)
+        self.last_line = time.monotonic()
+
+    def idle(self, directory):
+        if self.tty:
+            elapsed = int(time.monotonic() - self.last_line)
+            target = directory.name if directory else "no delegation logs"
+            width = shutil.get_terminal_size().columns or 80
+            print("\r\x1b[K" + f"Waiting: {target} ({elapsed}s)"[:max(0, width - 1)], end="", flush=True)
+            self.status_visible = True
+
+
+def read_logs(directory, positions, output):
+    for path in task_logs(directory):
+        try:
+            with path.open("rb") as log:
+                info = os.fstat(log.fileno())
+                identity = (info.st_dev, info.st_ino)
+                old_identity, offset = positions.get(path, (None, 0))
+                if identity != old_identity or info.st_size < offset:
+                    offset = 0  # Follow the name after replacement or truncation, like tail -F.
+                log.seek(offset)
+                for raw in log:
+                    if not raw.endswith(b"\n"):
+                        break  # Retry the incomplete line on the next poll.
+                    output.line(path.stem, raw.rstrip(b"\r\n").decode("utf-8", errors="replace"))
+                    offset += len(raw)
+                positions[path] = (identity, offset)
+        except FileNotFoundError:
+            continue
+
+
+def follow(root, fixed):
+    output = Output()
+    positions = {}
+    current = fixed
+    current_mtime = 0
+    seen = None
+    try:
+        while True:
+            if current is not None:
+                read_logs(current, positions, output)
+            if fixed is None:
+                runs = delegations(root)
+                paths = {directory for _, directory in runs}
+                if seen is None:
+                    pending = runs[:1]  # Don't replay older runs at startup.
+                else:
+                    # Only newly discovered runs are eligible; finishing setup of an older
+                    # run must not make the viewer switch back to it.
+                    pending = [(mtime, path) for mtime, path in runs if path not in seen and mtime >= current_mtime]
+                for current_mtime, current in reversed(pending):
+                    positions.clear()
+                    read_logs(current, positions, output)
+                seen = paths
+            output.idle(current)
+            time.sleep(POLL_SECONDS)
+    finally:
+        output.clear_status()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--list", action="store_true", help="list up to 10 recent delegations and their goals")
+    parser.add_argument("delegation_id", nargs="?", help="follow only this ID (default: switch to newer delegations)")
+    args = parser.parse_args()
+    home = Path(os.environ.get("HERMES_HOME") or "~/.hermes").expanduser()
+    root = home / "cache/delegation/live"
+    if args.list:
+        if args.delegation_id:
+            parser.error("--list cannot be combined with a delegation ID")
+        show_list(root)
+        return 0
+    fixed = None
+    if args.delegation_id:
+        if not DELEGATION_ID.fullmatch(args.delegation_id):
+            parser.error("expected a delegation ID in the form deleg_0123abcd")
+        fixed = root / args.delegation_id
+        if fixed.is_symlink() or not fixed.is_dir():
+            parser.error(f"delegation not found: {args.delegation_id} (see --list)")
+    follow(root, fixed)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        # Avoid a second error when Python flushes stdout during shutdown.
+        sys.stdout = open(os.devnull, "w")
+        sys.exit(0)
+    except OSError as exc:
+        sys.exit(f"hermes-subagent-tail: {exc}")
