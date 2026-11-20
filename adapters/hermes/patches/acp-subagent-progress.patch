@@ -1,0 +1,312 @@
+diff --git a/acp_adapter/gateway_reply.py b/acp_adapter/gateway_reply.py
+index c9ef49a0009..1c056b224b8 100644
+--- a/acp_adapter/gateway_reply.py
++++ b/acp_adapter/gateway_reply.py
+@@ -17,6 +17,25 @@ def _text(payload):
+ 
+ 
+ class GatewayReplyMixin:
++    async def _project_subagent(self, kind, sid, editor_id, aid, payload):
++        from acp_adapter.subagent_progress import ProgressCard, progress_line
++
++        if not aid or not self._conn:
++            return  # Background children carry no execution identity: never borrow another turn's card.
++        parent = payload.get("parent_tool_call_id") or payload.get("tool_call_id")
++        key = next((key for key, (name, _, owner) in reversed(self._tool_args.items())
++                    if key[0] == sid and name == "delegate_task" and owner == aid
++                    and (parent is None or key[1] == parent)), None)
++        if key is not None and (line := progress_line(kind, payload)):
++            card = self._subagent_cards.get(key)
++            if card is None:
++                card = self._subagent_cards[key] = ProgressCard(self._conn, editor_id, key[1])
++            await card.append(line, final=kind == "subagent.complete", background=self._background)
++
++    async def _finish_subagent_card(self, key):
++        if (card := self._subagent_cards.pop(key, None)) is not None:
++            await card.flush()
++
+     async def _project_tool(self, kind, sid, editor_id, aid, payload):
+         """``tool.start`` / ``tool.complete`` as the in-process callbacks projected them (#134889 ACP-15)."""
+         from acp_adapter.tools import build_tool_complete, build_tool_start, coerce_tool_args
+@@ -35,6 +54,7 @@ class GatewayReplyMixin:
+                 await self._conn.session_update(session_id=editor_id, update=build_tool_start(call_id, tool_name, args))
+             return
+         name, args, _ = self._tool_args.pop((sid, call_id), (tool_name, {}, aid))
++        await self._finish_subagent_card((sid, call_id))
+         result = payload.get("result")
+         if self._conn:
+             # ``is_error`` is the executor's verdict: a cancelled or failed tool may return plain text the
+@@ -58,6 +78,7 @@ class GatewayReplyMixin:
+         from acp_adapter.tools import build_tool_abandoned
+         for key in [key for key, held in self._tool_args.items() if key[0] == sid and held[2] == aid]:
+             name, _, _ = self._tool_args.pop(key)
++            await self._finish_subagent_card(key)
+             if self._conn:
+                 await self._conn.session_update(session_id=editor_id, update=build_tool_abandoned(key[1], name))
+ 
+diff --git a/acp_adapter/gateway_server.py b/acp_adapter/gateway_server.py
+index c2cb28a51c8..de06c7386c1 100644
+--- a/acp_adapter/gateway_server.py
++++ b/acp_adapter/gateway_server.py
+@@ -106,6 +106,7 @@ class GatewayACPAgent(GatewayReplyMixin, acp.Agent):
+         self._pending_cancels = set()
+         # (session, tool_call_id) -> (tool name, args, admission) of a call still open on the editor.
+         self._tool_args = {}
++        self._subagent_cards = {}
+         # Session -> AssistantMessageIdAllocator: the ``messageId`` of the assistant message being streamed.
+         self._message_ids = {}
+         # Editor-held compression-tip id -> logical session id (see ``_resume``).
+@@ -254,6 +255,12 @@ class GatewayACPAgent(GatewayReplyMixin, acp.Agent):
+         # Partial reply segments belonged to admissions whose waiters already failed. A reply cut off here
+         # never gets its ``message.complete`` (re-attach starts at the owner's current sequence), so its
+         # ``messageId`` closes too: the next reply must not reuse it.
++        pending = [card.task for card in self._subagent_cards.values() if card.task and not card.task.done()]
++        self._subagent_cards.clear()
++        for writer in pending:
++            writer.cancel()
++        if pending:
++            await asyncio.gather(*pending, return_exceptions=True)
+         self._streamed.clear()
+         self._segments.clear()
+         self._message_ids.clear()
+@@ -990,6 +997,12 @@ class GatewayACPAgent(GatewayReplyMixin, acp.Agent):
+         if kind in {"reasoning.delta", "todo.updated"}:
+             await self._project_side_update(kind, sid, editor_id, payload)
+             return
++        if isinstance(kind, str) and kind.startswith("subagent."):
++            try:
++                await self._project_subagent(kind, sid, editor_id, aid, payload)
++            except Exception:  # Display-only: never fail prompt waiters over a progress card.
++                logger.debug("ACP subagent progress not projected", exc_info=True)
++            return
+         if kind in {"tool.start", "tool.complete"}:
+             await self._project_tool(kind, sid, editor_id, aid, payload)
+             return
+diff --git a/acp_adapter/subagent_progress.py b/acp_adapter/subagent_progress.py
+new file mode 100644
+index 00000000000..9f76d8ce50c
+--- /dev/null
++++ b/acp_adapter/subagent_progress.py
+@@ -0,0 +1,86 @@
++"""Bounded, redacted live progress for the gateway viewer's delegate_task cards."""
++import asyncio
++import logging
++from collections import deque
++
++import acp
++
++from agent.redact import redact_sensitive_text
++
++logger = logging.getLogger(__name__)
++
++
++def progress_line(kind, p):
++    limit = 120
++    if kind in {"subagent.start", "subagent.spawn_requested"}:
++        label = "started" if kind == "subagent.start" else "queued"
++        detail = f"{label}: {p.get('goal') or p.get('text') or ''}".rstrip(": ")
++    elif kind == "subagent.tool":
++        tool = p.get("tool_name") or "tool"
++        preview = p.get("tool_preview") or p.get("text")
++        detail = f"▸ {tool}: {preview}" if preview else f"▸ {tool}"
++    elif kind == "subagent.progress":
++        detail = p.get("text") or "working"
++    elif kind == "subagent.thinking":
++        # The gateway omits text when reasoning is hidden. Never recover it from other fields.
++        detail = "💭 " + (p.get("text") or "thinking")
++        limit = len("💭 ") + 80
++    elif kind == "subagent.complete":
++        status = p.get("status") or "finished"
++        mark = "✓" if status in {"completed", "finished"} else "!"
++        seconds = p.get("duration_seconds")
++        elapsed = f" ({seconds:.0f}s)" if isinstance(seconds, (int, float)) else ""
++        detail = f"{mark} {status}{elapsed}"
++    else:
++        return None
++    # Redact before truncating: slicing a credential first can break its recognisable shape.
++    safe = " ".join(redact_sensitive_text(detail, force=True).split())
++    if len(safe) > limit:
++        safe = safe[:limit - 1] + "…"
++    return f"#{p.get('task_index', 0) + 1} {safe}"
++
++
++class ProgressCard:
++    """At most one writer per card; finish wakes the trailing send before the parent closes."""
++    def __init__(self, conn, editor_id, call_id):
++        self.conn, self.editor_id, self.call_id = conn, editor_id, call_id
++        self.lines = deque(maxlen=12)
++        self.next_send = 0.0
++        self.task = None
++        self.wake = asyncio.Event()
++        self.dirty = False
++
++    async def append(self, line, *, final, background):
++        self.lines.append(line)
++        self.dirty = True
++        ready = asyncio.get_running_loop().time() >= self.next_send
++        if self.task is None or self.task.done():
++            self.task = asyncio.create_task(self._drain())
++            background.add(self.task)
++            self.task.add_done_callback(background.discard)
++        if final or ready:
++            await self.flush()
++
++    async def flush(self):
++        if self.task is not None and not self.task.done():
++            self.wake.set()
++            await self.task
++
++    async def _drain(self):
++        loop = asyncio.get_running_loop()
++        while self.dirty:
++            delay = self.next_send - loop.time()
++            if delay > 0 and not self.wake.is_set():
++                try:
++                    await asyncio.wait_for(self.wake.wait(), delay)
++                except asyncio.TimeoutError:
++                    pass
++            self.wake.clear()
++            self.dirty = False
++            self.next_send = loop.time() + 0.5
++            try:
++                content = [acp.tool_content(acp.text_block("\n".join(self.lines)))]
++                await self.conn.session_update(session_id=self.editor_id, update=acp.update_tool_call(
++                    self.call_id, status="in_progress", content=content))
++            except Exception:  # Display only, including delayed sends outside the event pump.
++                logger.debug("ACP subagent card update failed", exc_info=True)
+diff --git a/tests/acp_adapter/test_gateway_subagent_progress.py b/tests/acp_adapter/test_gateway_subagent_progress.py
+new file mode 100644
+index 00000000000..a4fd278aa83
+--- /dev/null
++++ b/tests/acp_adapter/test_gateway_subagent_progress.py
+@@ -0,0 +1,130 @@
++"""Wire-facing regression tests for live delegate_task progress in the gateway viewer."""
++import asyncio
++from unittest.mock import AsyncMock
++
++import pytest
++
++from acp_adapter.gateway_server import GatewayACPAgent
++
++
++@pytest.fixture
++def viewer():
++    agent = GatewayACPAgent()
++    agent._conn = AsyncMock()
++    return agent
++
++
++async def emit(agent, kind, *, sid="s", aid="a", **payload):
++    await agent._project({"session_id": sid, "admission_id": aid, "type": kind, "payload": payload})
++
++
++async def start(agent, call_id, **kw):
++    await emit(agent, "tool.start", tool_call_id=call_id, tool_name="delegate_task", **kw)
++
++
++def updates(agent):
++    return [c.kwargs["update"].model_dump(by_alias=True, exclude_none=True)
++            for c in agent._conn.session_update.await_args_list]
++
++
++def text(update):
++    return update["content"][0]["content"]["text"]
++
++
++@pytest.mark.asyncio
++async def test_progress_updates_existing_card(viewer):
++    await start(viewer, "parent")
++    await emit(viewer, "subagent.tool", task_index=1, tool_name="terminal", tool_preview="ls -la")
++    update = updates(viewer)[-1]
++    assert update["sessionUpdate"] == "tool_call_update"
++    assert update["toolCallId"] == "parent" and update["status"] == "in_progress"
++    assert text(update) == "#2 ▸ terminal: ls -la"
++
++
++@pytest.mark.asyncio
++async def test_burst_is_coalesced_bounded_and_flushed_on_child_completion(viewer):
++    await start(viewer, "parent")
++    await emit(viewer, "subagent.start", goal="inspect")
++    for i in range(15):
++        await emit(viewer, "subagent.tool", tool_name="terminal", text=f"cmd{i}")
++    assert len(updates(viewer)) == 2  # start card + first live snapshot
++    await emit(viewer, "subagent.complete", status="completed", duration_seconds=34)
++    lines = text(updates(viewer)[-1]).splitlines()
++    assert len(lines) == 12 and lines[0].endswith("cmd4")
++    assert lines[-1] == "#1 ✓ completed (34s)"
++    assert updates(viewer)[-1]["status"] == "in_progress"
++
++
++@pytest.mark.asyncio
++async def test_idle_trailing_snapshot_and_redaction(viewer):
++    seen = asyncio.Event()
++    async def on_update(session_id, update):
++        if update.content and "💭" in str(update.content):
++            seen.set()
++    viewer._conn.session_update.side_effect = on_update
++    await start(viewer, "parent")
++    await emit(viewer, "subagent.spawn_requested", goal="inspect")
++    secret = "sk-" + "x" * 48
++    await emit(viewer, "subagent.thinking", text=f"OPENAI_API_KEY={secret}\n" + "z" * 120)
++    await asyncio.wait_for(seen.wait(), timeout=3)
++    lines = text(updates(viewer)[-1]).splitlines()
++    assert len(lines) == 2 and "inspect" in lines[0]
++    assert secret not in lines[1] and len(lines[1]) <= len("#1 💭 ") + 80
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("close", ["tool.complete", "message.complete"])
++async def test_close_flushes_pending_and_background_never_borrows_a_card(viewer, close):
++    await start(viewer, "parent")
++    await emit(viewer, "subagent.tool", tool_name="read_file")
++    await emit(viewer, "subagent.progress", text="read_file, terminal")
++    await emit(viewer, close, tool_call_id="parent")
++    assert "read_file, terminal" in text(updates(viewer)[-2])
++    assert updates(viewer)[-1]["status"] in {"failed", "completed"}
++    await start(viewer, "new", aid="next")
++    before = len(updates(viewer))
++    for aid in [None, "a"]:
++        await emit(viewer, "subagent.tool", aid=aid, tool_name="stale")
++    assert len(updates(viewer)) == before
++    assert not viewer._subagent_cards
++
++
++@pytest.mark.asyncio
++async def test_card_routing_and_projection_failure_isolation(viewer):
++    await start(viewer, "first")
++    await start(viewer, "second")
++    await start(viewer, "other", sid="another")
++    await emit(viewer, "subagent.tool", tool_name="read_file")
++    assert updates(viewer)[-1]["toolCallId"] == "second"
++    await emit(viewer, "subagent.tool", parent_tool_call_id="first", tool_name="terminal")
++    assert updates(viewer)[-1]["toolCallId"] == "first"
++    before = len(updates(viewer))
++    await emit(viewer, "subagent.tool", parent_tool_call_id="closed")
++    await emit(viewer, "subagent.tool", task_index={})
++    assert len(updates(viewer)) == before
++    viewer._conn.session_update.side_effect = OSError("editor gone")
++    await emit(viewer, "subagent.complete", status="failed")
++    viewer._conn.session_update.side_effect = None
++    await emit(viewer, "message.delta", text="still running")
++    assert updates(viewer)[-1]["content"]["text"] == "still running"
++
++
++@pytest.mark.asyncio
++async def test_disconnect_discards_delayed_progress(viewer):
++    await start(viewer, "parent")
++    await emit(viewer, "subagent.start", goal="inspect")
++    await emit(viewer, "subagent.progress", text="pending")
++    before = len(updates(viewer))
++    await viewer._teardown()
++    assert not viewer._subagent_cards
++    assert len(updates(viewer)) == before
++
++
++@pytest.mark.asyncio
++async def test_hidden_reasoning_remains_hidden_at_the_wire(viewer):
++    from tui_gateway.tool_progress import _subagent_payload
++
++    await start(viewer, "parent")
++    payload = _subagent_payload("subagent.thinking", None, "hidden reasoning", {}, show_reasoning=False)
++    await emit(viewer, "subagent.thinking", **payload)
++    assert text(updates(viewer)[-1]) == "#1 💭 thinking"

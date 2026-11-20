@@ -86,6 +86,7 @@ cron_has subscription-review || hermes cron create "every monday 9am" "$(cat "$H
 # 4d. Zed から ACP で Hermes を使う（settings.json の agent_servers に hermes-agent を足す）
 #     Dock から起動した Zed は PATH を引き継がないことがあるため、hermes は絶対パスで書く
 python3 "$HERE/scripts/zed-acp.py" "$(command -v hermes)"
+bash "$HERE/scripts/apply-hermes-patches.sh"
 
 # 4e. Zed のターミナルからサブエージェントの実行ログを追う
 mkdir -p "$HOME/.local/bin"
