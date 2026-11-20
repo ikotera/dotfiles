@@ -92,7 +92,7 @@ Hermes デスクトップ内のブラウザで開くと、権限を個別に選�
 - **`skill_view` が symlink の外側を読まない**: `skills/*/references/` は `shared-references/` への相対 symlink なので「Path escapes allowed directory」になる。コピーで回避せず、`hermes-instructions.md` と各 SKILL.md に「そのときは正本を `read_file` で読む」と書いて対応した。
 - **出力整形チェックを移さない理由**: `check_formatting.py` の2つの規則（61文字以上の `$...$`、`\[...\]`）は Claude Code の描画の不具合に合わせたもの。Hermes デスクトップは前処理で `\(...\)`・`\[...\]` を KaTeX 用に変換し、`$...$` の長さ制限もない（apps/desktop の `markdown-preprocess.ts` で確認。画面での実測は未実施）。また Hermes で応答をやり直させられるフック（`pre_verify`）は、コードを編集したターンでしか発火しない。Hermes 固有の注意点（`$...$` の中の日本語は描画されない等）は `hermes-instructions.md` に書いた。
 - **RTK の書き換え**: `rtk rewrite` の終了コード 0（書き換え）と 3（書き換え・要確認）で書き換え、それ以外は元のまま。失敗・時間切れ（3秒）でも何もしない。`DOTFILES_HERMES_RTK=0` で止められる。
-- **5時間枠の警告**: Claude / OpenAI の使用率が80%以上なら、`pre_llm_call` が指揮役に毎ターン、自動通知を添える。フックは `$HERMES_HOME/cache/quota-status-cache.json` を読むだけで、キャッシュがないか10分を超えて古い場合は、`setup.sh` で配置済みの `$HERMES_HOME/scripts/quota-status.py --json` をバックグラウンドで実行して更新する。フック内で同期実行するとタイムアウトの原因になるため、更新を待たない。初回は通知せず、サブエージェントには差し込まない。
+- **5時間枠の警告**: Claude / OpenAI の使用率が80%以上なら、`pre_llm_call` が指揮役に毎ターン、自動通知を添える。Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。フックは `$HERMES_HOME/cache/quota-status-cache.json` を読むだけで、キャッシュがないか10分を超えて古い場合は、`setup.sh` で配置済みの `$HERMES_HOME/scripts/quota-status.py --json` をバックグラウンドで実行して更新する。フック内で同期実行するとタイムアウトの原因になるため、更新を待たない。初回は通知せず、サブエージェントには差し込まない。
 
 ## プラグインを変更したとき
 

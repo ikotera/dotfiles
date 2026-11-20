@@ -424,9 +424,9 @@ def _notify_quota(parent_session_id=None, **_kwargs):
             continue  # 更新待ちでも、終了した5時間枠の値では警告しない。
         limit = f"{used:g}%（リセット {reset.strftime('%H:%M') if reset else '不明'}）"
         if row["account"] == "claude":
-            notices.append(f"Claude の5時間枠が {limit}。表で委任に当たる作業は quota-aware-routing に従い、"
-                           "OpenAI 側のサブエージェントに任せ、自分では指示と確認だけにし、95%を超えそうなら"
-                           "ユーザーにメインモデルの切り替えを尋ねる。")
+            notices.append(f"Claude の5時間枠が {limit}：自分で行うのは会話・質問への回答と"
+                           "道具を1〜2回使う確認だけとし、要約・下書きも quota-aware-routing に従って委任する。"
+                           "95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。")
         else:
             notices.append(f"OpenAI 側の5時間枠が {limit}。deep を避け、重要なものは claude-backup、軽いものは quick に回す。")
     if notices:
