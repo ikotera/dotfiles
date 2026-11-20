@@ -53,7 +53,7 @@ Hermes には会話のあとに自動でスキルを改善する機能（backgro
 | Interactive Brokers | リモート MCP `https://api.ibkr.com/v1/api/mcp-public`（`trust: untrusted` で書き込み系は毎回承認） | `hermes mcp login ibkr` |
 | Plaud | リモート MCP `https://mcp.plaud.ai/mcp` | `hermes mcp login plaud` |
 | Gmail・Google Calendar | Hermes 標準スキル `google-workspace` | 下記 |
-| Chrome/Edge | `browser.use_real_profile: true`（既定ブラウザのログイン状態を写したプロファイルで操作） | 下記 |
+| Chrome/Edge | Hermes 専用のデータフォルダ（`~/.hermes/edge-profile`）で Edge を起動して操作 | 下記 |
 
 URL と設定は `setup.sh` が入れる。トークン・クライアントの秘密情報は `~/.hermes/` に置き、dotfiles には入れない。
 
@@ -67,7 +67,11 @@ python adapters/hermes/scripts/google_setup_narrow.py --auth-code '<リダイレ
 
 Hermes デスクトップ内のブラウザで開くと、権限を個別に選べない旧式の同意画面になり、許可しても先へ進まない（2026-11-20 に確認）。許可後の `http://localhost:1/…` は ERR_UNSAFE_PORT で開けないが、それで正常。アドレスバーの URL を渡す。
 
-**Chrome/Edge**: macOS は Hermes がブラウザのプロフィールフォルダを読むのを拒否する。gateway は `Hermes.app` の子ではなく osascript 経由で起動した Hermes 同梱の Python で動くため、フルディスクアクセスには `~/.hermes/tools/python-3.14.9+…/bin/python3.14` を追加し、`hermes gateway restart` する（`Hermes.app` を許可しただけでは足りない）。
+**Chrome/Edge**: 普段のプロファイルを写す `browser.use_real_profile` は使わない。macOS が gateway からブラウザのプロフィールフォルダの読み取りを拒否し、`Hermes.app` と同梱の `python3.14` にフルディスクアクセスを与えても解消しなかった（gateway は osascript 経由で起動され、親から切り離されるため、許可の判定先が別になっていると推測）。代わりに `setup.sh` が Edge を Hermes 専用のデータフォルダで使う設定にする。Edge 内で作った別プロファイルは普段のデータフォルダの中にあるので、この用途には使えない。初回だけ、次のコマンドで開いた Edge で、Hermes に使わせるサイトにログインして Edge を終了する。
+
+```bash
+open -na "Microsoft Edge" --args --user-data-dir="$HOME/.hermes/edge-profile" --no-first-run --no-default-browser-check
+```
 
 ## setup.sh がすること
 
