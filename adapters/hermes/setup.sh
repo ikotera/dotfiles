@@ -45,6 +45,19 @@ hermes config set skills.external_dirs "[\"$SHARED_SKILLS\", \"$HERE/skills\"]"
 # 4. Obsidian の vault
 [ -d "$KB" ] && hermes config set OBSIDIAN_VAULT_PATH "$KB"
 
+# 4b. 外部サービスとの連携（URL と設定だけ。OAuth のトークンはマシンごとに `hermes mcp login <名前>` で取る）
+mcp_remote() {  # mcp_remote <名前> <URL> [trust]
+  hermes config set "mcp_servers.$1.url" "$2"
+  hermes config set "mcp_servers.$1.auth" oauth
+  hermes config set "mcp_servers.$1.enabled" true
+  [ -n "${3:-}" ] && hermes config set "mcp_servers.$1.trust" "$3"
+  return 0
+}
+mcp_remote ibkr https://api.ibkr.com/v1/api/mcp-public untrusted   # 発注など書き込み系は毎回承認
+mcp_remote plaud https://mcp.plaud.ai/mcp
+# ブラウザ: 既定ブラウザ（Edge/Chrome）のログイン状態を写したプロファイルで操作する
+hermes config set browser.use_real_profile true
+
 # 5. import-agent の残骸（dotfiles と完全に同一のコピーだけ消す）
 IMPORTS="$HERMES_HOME/skills/claude-code-imports"
 if [ -d "$IMPORTS" ]; then
