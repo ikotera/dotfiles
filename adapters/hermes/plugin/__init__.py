@@ -21,7 +21,10 @@
      未処理の提案が増えたら、次のユーザー発言に「返答の最後で一行だけ確認を勧める」
      指示を添える（pre_llm_call。システムプロンプトは変えないのでキャッシュを崩さない）。
      同じ提案を知らせるのは 1 セッションにつき 1 回。新しい提案が増えたときだけ再び知らせる。
-  5. 専用 Edge の自動起動・自動終了
+  5. 5時間枠の警告
+     Claude / OpenAI の使用率が80%以上なら、毎ターン指揮役に通知する。
+     残量の取得はバックグラウンドで行い、pre_llm_call はキャッシュだけを読む。
+  6. 専用 Edge の自動起動・自動終了
      Hermes がブラウザのツールを使う直前に、専用 Edge（scripts/hermes-edge.sh、
      ~/.hermes/edge-profile、ポート 9222）が起動していなければ、前面に出さずに起動して待つ。
      このプラグインが起動した Edge は、ブラウザを使わない時間が一定（既定 10 分）続くと終了する。
@@ -54,6 +57,7 @@ import urllib.request
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -331,7 +335,107 @@ def _notify_proposals(session_id=None, platform=None, parent_session_id=None, **
 
 
 # ---------------------------------------------------------------------------
-# 5. 専用 Edge の自動起動・自動終了
+# 5. 5時間枠の警告（更新はフックの外で行う）
+# ---------------------------------------------------------------------------
+_QUOTA_TTL = 10 * 60
+_QUOTA_WINDOWS = {"claude": "Current session", "openai": "Session"}
+_quota_refresh_lock = threading.Lock()
+
+
+def _quota_sessions(rows):
+    for row in rows if isinstance(rows, list) else ():
+        if not isinstance(row, dict):
+            continue
+        account = row.get("account")
+        window = _QUOTA_WINDOWS.get(account) if isinstance(account, str) else None
+        if window is None or row.get("window") != window:
+            continue
+        used = row.get("used")
+        if isinstance(used, (int, float)) and not isinstance(used, bool) and 0 <= used <= 100:
+            yield row
+
+
+def _refresh_quota_cache(home: Path, cache: Path):
+    try:
+        import fcntl
+
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        # gateway と CLI が別プロセスで動いても、同じキャッシュの更新は重ねない。
+        with cache.with_suffix(".lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if cache.exists() and time.time() - cache.stat().st_mtime <= _QUOTA_TTL:
+                return
+            proc = subprocess.run(
+                ["python3", str(home / "scripts" / "quota-status.py"), "--json"],
+                env={**os.environ, "HERMES_HOME": str(home)}, capture_output=True,
+                text=True, timeout=130, check=True,
+            )
+            rows = json.loads(proc.stdout)
+            if not any(_quota_sessions(rows)):
+                return
+            # フックに書きかけの JSON を読ませない。
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache.parent, delete=False) as out:
+                tmp = Path(out.name)
+                try:
+                    json.dump([row for row in rows if isinstance(row, dict) and "error" not in row], out)
+                    out.close()
+                    tmp.replace(cache)
+                finally:
+                    tmp.unlink(missing_ok=True)
+    except (OSError, subprocess.SubprocessError, ValueError, ImportError):
+        pass  # 取得失敗時も会話を妨げず、既存のキャッシュを残す。
+    finally:
+        _quota_refresh_lock.release()
+
+
+def _notify_quota(parent_session_id=None, **_kwargs):
+    if parent_session_id:
+        return None
+    home = _hermes_home()
+    cache = home / "cache" / "quota-status-cache.json"
+    try:
+        stale = time.time() - cache.stat().st_mtime > _QUOTA_TTL
+    except OSError:
+        stale = True
+    try:
+        rows = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rows = []
+    if stale and _quota_refresh_lock.acquire(blocking=False):
+        try:
+            threading.Thread(target=_refresh_quota_cache, args=(home, cache),
+                             name="dotfiles-quota-refresh", daemon=True).start()
+        except RuntimeError:
+            _quota_refresh_lock.release()
+
+    notices = []
+    for row in _quota_sessions(rows):
+        used = row["used"]
+        if used < 80:
+            continue
+        reset = None
+        timestamp = row.get("resets")
+        if isinstance(timestamp, str):
+            try:
+                reset = _dt.datetime.fromisoformat(timestamp).astimezone()
+            except (ValueError, OSError, OverflowError):
+                pass
+        if reset is not None and reset <= _dt.datetime.now().astimezone():
+            continue  # 更新待ちでも、終了した5時間枠の値では警告しない。
+        limit = f"{used:g}%（リセット {reset.strftime('%H:%M') if reset else '不明'}）"
+        if row["account"] == "claude":
+            notices.append(f"Claude の5時間枠が {limit}。表で委任に当たる作業は quota-aware-routing に従い、"
+                           "OpenAI 側のサブエージェントに任せ、自分では指示と確認だけにし、95%を超えそうなら"
+                           "ユーザーにメインモデルの切り替えを尋ねる。")
+        else:
+            notices.append(f"OpenAI 側の5時間枠が {limit}。deep を避け、重要なものは claude-backup、軽いものは quick に回す。")
+    if notices:
+        return {"context": "[dotfiles-bridge・ユーザーの発言ではない自動通知] " + "\n".join(notices)}
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 6. 専用 Edge の自動起動・自動終了
 # ---------------------------------------------------------------------------
 _BROWSER_TOOLS = {"browser_exec", "browser_cdp", "browser_dialog", "browser_vault"}
 _EDGE_PORT = int(os.environ.get("HERMES_EDGE_PORT") or 9222)
@@ -422,5 +526,6 @@ def register(ctx):
     ctx.register_hook("pre_tool_call", _rtk_rewrite)
     ctx.register_hook("pre_tool_call", _guard_shared_skills)
     ctx.register_hook("pre_llm_call", _notify_proposals)
+    ctx.register_hook("pre_llm_call", _notify_quota)
     ctx.register_hook("pre_tool_call", _ensure_edge)
     ctx.register_hook("post_tool_call", _touch_edge)
