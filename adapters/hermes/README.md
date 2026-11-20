@@ -35,12 +35,12 @@ Hermes には会話のあとに自動でスキルを改善する機能（backgro
 | 操作 | 対象 | 扱い |
 |---|---|---|
 | `skill_manage`（自動改善を含む） | dotfiles の `skills/`・`adapters/hermes/skills/` のスキル | 止める。内容を `~/.hermes/skill-proposals/<日時>-<スキル名>.md` に提案として保存 |
-| `write_file` / `patch` | 上記と `shared-references/` の下のファイル | 承認を求める（ユーザーが採用を決めたときの反映用） |
+| `write_file` / `patch` | 上記と `shared-references/` の下のファイル | 編集時に承認を求める（提案の採否とは別） |
 | それ以外 | Hermes 自身のスキル（`~/.hermes/skills/`）・メモリー・curator | 干渉しない |
 
-提案の確認と反映は、Hermes に「スキルの提案を確認して」と頼む（スキル `dotfiles-skill-proposals`）。
+Hermes はスキル `dotfiles-skill-proposals` の手順で Claude Code・Codex への影響を検討し、提案の採否を自分で判断する。判断に迷う提案だけユーザーに確認する。「スキルの提案を確認して」と明示的に頼むこともできる。
 
-頼まなくても、未処理の提案が増えると Hermes が次の返答の最後で一行だけ確認を勧める（`pre_llm_call` で、その回の発言に通知を添える。システムプロンプトは変えないのでプロンプトキャッシュは崩れない）。同じ提案を知らせるのは1つの会話で1回だけで、新しい提案が増えたときにだけ再び知らせる。定期実行（cron）の会話では知らせない。`DOTFILES_HERMES_NOTIFY=0` で止められる。
+未処理の提案が増えると、`pre_llm_call` でその回の発言に通知を添える。Hermes は今回の依頼に答えた後に提案を処理する。急ぎの依頼や別件の作業中なら、区切りのよいときに処理する。システムプロンプトは変えないのでプロンプトキャッシュは崩れない。同じ提案を知らせるのは1つの会話で1回だけで、新しい提案が増えたときにだけ再び知らせる。定期実行（cron）の会話では知らせない。`DOTFILES_HERMES_NOTIFY=0` で止められる。
 
 自動スキル改善が起動するのは、前回の改善または `skill_manage` からツール呼び出しが `skills.creation_nudge_interval`（既定 15）回たまったとき。学ぶことがなければ何も変えない。
 

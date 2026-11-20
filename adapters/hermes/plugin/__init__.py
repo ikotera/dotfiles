@@ -14,12 +14,13 @@
      Hermes の自動スキル改善（background review）や skill_manage が、dotfiles の
      スキル（skills/・adapters/hermes/skills/）を書き換えようとしたら止め、変更内容を
      $HERMES_HOME/skill-proposals/ に提案として保存する。dotfiles は自動同期で公開
-     リポジトリへ push され、Claude Code・Codex も読むため、採否はユーザーが決める。
+     リポジトリへ push され、Claude Code・Codex も読むため、採否は両者への影響を見て判断する。
      Hermes 自身のスキル（~/.hermes/skills/）・メモリー・curator には干渉しない。
-     採用は write_file / patch で dotfiles のファイルを直接編集する（その際は承認を求める）。
+     反映は write_file / patch で行う（編集時の承認は提案の採否とは別）。
   4. 提案の通知
-     未処理の提案が増えたら、次のユーザー発言に「返答の最後で一行だけ確認を勧める」
-     指示を添える（pre_llm_call。システムプロンプトは変えないのでキャッシュを崩さない）。
+     未処理の提案が増えたら、今回の依頼に答えた後（急ぎ・別件の作業中なら区切りのよいとき）に
+     dotfiles-skill-proposals の手順で処理し、判断に迷う提案だけユーザーに尋ねるよう指示を添える。
+     pre_llm_call を使い、システムプロンプトは変えないのでキャッシュを崩さない。
      同じ提案を知らせるのは 1 セッションにつき 1 回。新しい提案が増えたときだけ再び知らせる。
   5. 5時間枠の警告
      Claude / OpenAI の使用率が80%以上なら、毎ターン指揮役に通知する。
@@ -268,8 +269,8 @@ def _guard_shared_skills(tool_name=None, args=None, session_id=None, task_id=Non
         others = len(ops) - len(hits)
         msg = (f"dotfiles の共有スキル（{', '.join(sorted({str(o.get('name')) for o in hits}))}）は "
                "Claude Code・Codex と共有し、自動同期で公開リポジトリへ push されるため、Hermes からは"
-               f"直接書き換えない。変更内容は提案として {saved} に保存した。採否はユーザーが決める。"
-               "ユーザーとの会話中なら、提案を保存したことを一言伝える。")
+               f"直接書き換えない。変更内容は提案として {saved} に保存した。"
+               "ユーザーとの会話中なら、dotfiles-skill-proposals の手順で処理する。")
         if others:
             msg += f" 同じ呼び出しに含まれていた他の {others} 件の操作も実行していないので、必要ならそれだけを再実行する。"
         return {"action": "block", "message": msg}
@@ -326,11 +327,10 @@ def _notify_proposals(session_id=None, platform=None, parent_session_id=None, **
         "[dotfiles-bridge] dotfiles の共有スキルへの変更提案が未処理で "
         f"{len(pending)} 件ある（対象: {', '.join(skills)}。最も古いもの: {oldest[:4]}-{oldest[4:6]}-{oldest[6:]}。"
         f"保存先: {_hermes_home() / 'skill-proposals'}）。"
-        "これはユーザーの発言ではなく自動の通知。今回の依頼にまず答え、返答の最後に一行だけ"
-        "「共有スキルの変更提案が N 件あります。確認しますか？」の形で確認を勧める。"
-        "依頼の内容が急ぎ・別件の作業の途中なら、それを妨げない短さにする。"
-        "ユーザーが了承したらスキル dotfiles-skill-proposals の手順で処理する。"
-        "この通知に触れるのは今回の返答だけでよい。"
+        "これはユーザーの発言ではなく自動の通知。今回の依頼に答えた後、"
+        "スキル dotfiles-skill-proposals の手順で処理する。"
+        "急ぎの依頼や別件の作業中なら、区切りのよいときに処理する。"
+        "判断に迷う提案だけユーザーに尋ねる。"
     )}
 
 
