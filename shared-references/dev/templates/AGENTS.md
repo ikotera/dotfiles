@@ -5,7 +5,7 @@ AI エージェント（Claude Code・Codex・Gemini）向けの入口。詳細�
 ## 最初に読む
 
 1. `PLAN.md`（唯一の正本。目的・仕様・要望一覧・ステップ・版・計測・気づきの台帳）
-   - 利用者の要望の原文は `WISHLIST.md`（1行1要望で行頭にハイフンを付けない。要望の間に空白行。補足は空白行なしの改行＋タブ）
+   - 利用者の要望の原文は `WISHLIST.md`（1行1要望で行頭にハイフンを付けない。要望の間に空白行。補足は空白行なしの改行＋半角スペース2つ＋`- `）
 2. dotfiles の開発規約（ローカル `~/Github/dotfiles/shared-references/dev/`、クラウド `~/dotfiles/shared-references/dev/`）: `workflow.md`・`principles.md`・`versioning.md`。読めない環境では下の「規則の要約」に従う。
 
 ## 規則の要約
