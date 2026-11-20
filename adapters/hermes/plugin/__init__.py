@@ -32,8 +32,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# adapters/hermes/plugin/__init__.py → dotfiles ルート（symlink 経由でも実体の位置で解決）
-_DOTFILES = Path(os.environ.get("DOTFILES_DIR") or Path(__file__).resolve().parents[3])
+def _find_dotfiles() -> Path:
+    """dotfiles ルートを探す。Hermes がプラグインを一時ディレクトリへ写して読み込む場合が
+    あるため、このファイルの位置（adapters/hermes/plugin → 3階層上）だけには頼らない。"""
+    here = Path(__file__).resolve()
+    candidates = [os.environ.get("DOTFILES_DIR"), here.parents[3] if len(here.parents) > 3 else None,
+                  "~/.agents", "~/Github/dotfiles", "~/dotfiles"]
+    for c in candidates:
+        if c and (Path(c).expanduser() / "instructions" / "shared-instructions.md").is_file():
+            return Path(c).expanduser().resolve()
+    return Path("~/Github/dotfiles").expanduser()
+
+
+_DOTFILES = _find_dotfiles()
 SHARED = _DOTFILES / "instructions" / "shared-instructions.md"
 HERMES = _DOTFILES / "instructions" / "hermes-instructions.md"
 
