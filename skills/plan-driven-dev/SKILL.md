@@ -30,6 +30,12 @@ description: アプリやツールを新しく作る・既存のプロジェク�
 7. **commit・push まで行い、push 先のリポジトリ・ブランチ・タグを報告する**。
 8. **気づきを PLAN §12 に1行ずつ書き、たまったら（3件以上・minor 以上の版の更新・会話が長くなったとき）、要約される前に knowledge-base へ distill する**。
 
+## 開発規約そのものを変えるとき
+
+- 規約の変更は、同じ内容を書いている箇所をすべて同じ commit で揃える: `shared-references/dev/workflow.md`・`shared-references/dev/templates/`（`PLAN.md`・`AGENTS.md` 等）・この SKILL.md・`instructions/shared-instructions.md`・`instructions/gemini-instructions.md`・`README.md`。先に `grep -rn '<旧い言い回し>' instructions shared-references/dev skills/plan-driven-dev README.md` で漏れを洗い出す。一部だけ直すと、エージェントごとに違う規約を読むことになる。
+- 既存のプロジェクトに影響する変更には、移行の手順（何を・どこへ・版は上げない単独 commit）を `workflow.md` に書き、移行のタイミング（次に呼び出されたとき等）を明記する。
+- Markdown のファイルの書式を決めるときは、規約に書く前に CommonMark の描画（例: `markdown-it` の `md.render()`）で確かめる。
+
 ## 推測と事実の区別
 
 確かめていない原因や、計測していない性能の見込みは、PLAN と報告に「推測」「未計測」と明記する。
