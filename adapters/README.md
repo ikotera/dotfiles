@@ -11,6 +11,7 @@
       stop_hook.py          # Claude Code 用アダプタ: Stop フックの JSON を本体に橋渡し。
     codex/                  # （将来）Codex 用。config.toml の [hooks.Stop] から呼ぶ。
     gemini/                 # （将来）Gemini 用。settings.json の stop/turn 系から呼ぶ。
+    hermes/                 # Hermes 用の設定一式（プラグイン等）。整形チェックは使わない（理由は hermes/README.md）。
 ```
 
 ## 役割分担

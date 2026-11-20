@@ -1,0 +1,21 @@
+# Hermes 固有の規約（shared-instructions.md への差分）
+共通規約は `shared-instructions.md`（別節で注入）に従い、Hermes で異なる点だけを次に定める。両者が食い違う場合はこちらを優先する。
+
+## 出力整形（Hermes デスクトップ）
+- 数式は `$...$`（インライン）と `$$...$$`（単独行の独立式）を使う。Hermes の描画は `\(...\)`・`\[...\]` も KaTeX に正規化するが、記法は `$` 系に統一する。独立式の番号は式の外に「(1)」と書く。
+- `$...$` の中に日本語（CJK）を入れない。その式は数式として描画されず生の文字になる。日本語は式の外に書く。
+- 図は ```mermaid フェンスで描く。mermaid で表せない図や操作できる図は、HTML ファイルを書いて `::preview{file="..."}` で表示する。
+- 以上は Hermes のレンダラのソース（apps/desktop の markdown-preprocess.ts）で確認したもので、画面での実測ではない。
+
+## スキル
+- 他のエージェントでも使う手順の正本は dotfiles の `skills/`。Hermes は `skills.external_dirs` で読み込む（読み取り専用）。変更は dotfiles 側のファイルを直接編集し、commit・push する。
+- dotfiles のスキルの `references/` は `shared-references/` への symlink で、`skill_view` では「Path escapes allowed directory」になり読めない。そのときは、エラーに出る実体のパス（`~/Github/dotfiles/shared-references/...`）を `read_file` で読む。
+- Hermes の仕組みに依存する手順は dotfiles の `adapters/hermes/skills/` に置く（同じく external_dirs で読み込む）。
+- `skill_manage` で作られるスキルは `~/.hermes/skills/`（git 管理外）に入る。他のエージェントでも使えそうなら、dotfiles の `skills/` へ移すことを提案する。
+
+## メモリー
+- dotfiles は公開リポジトリのため、MEMORY.md・USER.md（`~/.hermes/memories/`）の内容を dotfiles に書かない。
+- 長く残す知見は knowledge-base（Obsidian の vault、`OBSIDIAN_VAULT_PATH`）に atomic note・distill として残す。メモリーには参照先だけを置く。
+
+## コマンド実行
+- terminal のコマンドは dotfiles-bridge プラグインが `rtk rewrite` で自動的に RTK 版へ書き換える。`rtk` を手で付ける必要はない。

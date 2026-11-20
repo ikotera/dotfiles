@@ -18,7 +18,7 @@ description: Codex/AI セッションを要約・distill 化・保存し、knowl
 5. `references/obsidian-rules.md`
 6. `references/moc-workflow.md`
 
-これらは dotfiles の `shared-references/` にある正本の写し（ローカルでは `~/Github/dotfiles/` への symlink、クラウドでは実体のコピー）。この skill の `references/` から読み、正本のパスを直接開かない。
+これらは dotfiles の `shared-references/` にある正本の写し（ローカルでは `~/Github/dotfiles/` への symlink、クラウドでは実体のコピー）。この skill の `references/` から読み、正本のパスを直接開かない。ただし symlink を辿れない読み取りツール（Hermes の `skill_view` 等）でエラーになった場合に限り、正本 `~/Github/dotfiles/shared-references/<ファイル名>` を通常のファイル読み取りで読む。
 
 ## ワークフロー
 

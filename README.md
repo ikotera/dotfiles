@@ -1,6 +1,6 @@
 # dotfiles
 
-Claude Code / Codex CLI / Gemini CLI 間で共有する AI エージェント設定（指示書・skills・フック等）の正本。
+Claude Code / Codex CLI / Gemini CLI / Hermes Agent 間で共有する AI エージェント設定（指示書・skills・フック等）の正本。
 各マシンの設定ファイルからシンボリックリンクで参照し、Claude Code のクラウドセッションには環境設定のセットアップスクリプトで配信する。
 
 **このリポジトリは公開**。秘密情報（トークン・鍵・個人情報）を置かないこと。自動同期（`bin/sync.sh`）はトークン様の文字列を検知するとコミットを中止する。
@@ -14,10 +14,12 @@ dotfiles/
   instructions/
     shared-instructions.md  # 全ツール共通の出力整形・回答規約（正本）
     gemini-instructions.md  # Gemini CLI 固有の規約
+    hermes-instructions.md  # Hermes 固有の差分（dotfiles-bridge プラグインが shared-instructions.md と一緒に注入）
   skills/<skill-name>/      # Claude Code の Skill（references/ は shared-references/ への相対 symlink。クラウドでは実体化してコピー）
   shared-references/        # skills から共有参照される規約・テンプレート類の正本
     dev/                    # アプリ開発の規約（原則・ワークフロー・版・技術選定・macOS の見た目）とテンプレート
   adapters/claude/stop_hook.py   # Stop フック用アダプタ（policy/check_formatting.py を橋渡し）
+  adapters/hermes/               # Hermes 専用の設定（プラグイン・SOUL.md・Hermes 専用スキル・setup.sh）。詳細は adapters/hermes/README.md
   policy/check_formatting.py     # 出力整形ルールの検査本体（ベンダ非依存）
   bin/
     sync.sh                 # ローカル(macOS)の自動同期
@@ -46,6 +48,7 @@ file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化�
 
 - Claude Code は `CLAUDE.md`、Codex CLI は `AGENTS.md` というファイル名を読む。規約の実体は `instructions/shared-instructions.md` に一本化している。
 - `CLAUDE.md` は `@instructions/shared-instructions.md` という**相対パス**の `@import` を持つ。`@import` の相対パスは「importする側のファイルが読まれた見かけ上のパス」を基準に解決されるため、`~/.claude/CLAUDE.md` から読まれる場合に備えて `~/.claude/instructions` を `instructions/` へのsymlinkにしている。
+- Hermes は `@import` を解決せず、`~/.claude/CLAUDE.md`・`~/.codex/AGENTS.md` も読まない。代わりに `adapters/hermes/plugin`（dotfiles-bridge）が、新しいセッションごとに `instructions/shared-instructions.md` と `instructions/hermes-instructions.md` をファイルから読んでシステムプロンプトに入れる（中身のコピーは持たない）。
 - **RTK**（[rtk-ai/rtk](https://github.com/rtk-ai/rtk)、bashコマンド出力を圧縮してトークンを節約するCLIプロキシ）はローカルにしかインストールされていない。共有ファイル（`CLAUDE.md`・`shared-instructions.md`）にRTKの `@import` を置くと、クラウドセッションが存在しないファイルを探して無駄な呼び出しをするため、RTKの読み込みはローカルの `~/.claude/CLAUDE.md`（git管理外の実ファイル）に限定している。
 
 ## ローカル（macOS）のセットアップ
@@ -60,6 +63,7 @@ ln -sfn ~/Github/dotfiles/AGENTS.md ~/.codex/AGENTS.md
 ln -sfn ~/Github/dotfiles/instructions ~/.codex/instructions
 ln -sfn ~/Github/dotfiles/zsh/.zshrc ~/.zshrc
 ln -sfn ~/Github/dotfiles/cargo/config.toml ~/.cargo/config.toml
+bash ~/Github/dotfiles/adapters/hermes/setup.sh   # Hermes を使う場合（何度実行してもよい）
 ```
 
 内蔵SSDの自動整理（`storage/storage-maintenance.sh`）は `~/Library/LaunchAgents/com.ikotera.storage-maintenance.plist` から毎週日曜12時に起動する。消すのは再ビルドで戻るものだけ（14日未使用か20GB超の cargo build-dir、30日未使用の `target`）。ログは `~/Library/Logs/storage-maintenance/storage.log`、空きが40GB未満なら通知する。
