@@ -8,10 +8,11 @@
 - 以上は Hermes のレンダラのソース（apps/desktop の markdown-preprocess.ts）で確認したもので、画面での実測ではない。
 
 ## スキル
-- 他のエージェントでも使う手順の正本は dotfiles の `skills/`。Hermes は `skills.external_dirs` で読み込む（読み取り専用）。変更は dotfiles 側のファイルを直接編集し、commit・push する。
+- 他のエージェントでも使う手順の正本は dotfiles の `skills/`。Hermes は `skills.external_dirs` で読み込む。
+- dotfiles のスキル（`skills/`・`adapters/hermes/skills/`・`shared-references/`）は公開リポジトリへ自動で push され、Claude Code・Codex も読む。`skill_manage` での書き換えは dotfiles-bridge が止め、内容を `~/.hermes/skill-proposals/` に提案として保存する。改善点に気づいたら提案として残し、反映はユーザーが承認したときだけ、スキル `dotfiles-skill-proposals` の手順で `patch` / `write_file` を使って行う。
 - dotfiles のスキルの `references/` は `shared-references/` への symlink で、`skill_view` では「Path escapes allowed directory」になり読めない。そのときは、エラーに出る実体のパス（`~/Github/dotfiles/shared-references/...`）を `read_file` で読む。
 - Hermes の仕組みに依存する手順は dotfiles の `adapters/hermes/skills/` に置く（同じく external_dirs で読み込む）。
-- `skill_manage` で作られるスキルは `~/.hermes/skills/`（git 管理外）に入る。他のエージェントでも使えそうなら、dotfiles の `skills/` へ移すことを提案する。
+- Hermes 自身のスキル（`~/.hermes/skills/`、git 管理外）とメモリーは、これまでどおり自由に作成・改善してよい。他のエージェントでも使えそうなスキルは、dotfiles の `skills/` へ移すことを提案する。
 
 ## メモリー
 - dotfiles は公開リポジトリのため、MEMORY.md・USER.md（`~/.hermes/memories/`）の内容を dotfiles に書かない。
