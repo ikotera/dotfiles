@@ -8,6 +8,7 @@
 #   3. skills.external_dirs に dotfiles の skills/ と adapters/hermes/skills/ を登録
 #   4. OBSIDIAN_VAULT_PATH に knowledge-base を設定（$HERMES_HOME/.env）
 #   4c. Claude と ChatGPT の使い分け（scripts/apply-model-routing.sh）と残量確認の cron
+#   4d. Zed の外部エージェント（ACP）に Hermes を登録（scripts/zed-acp.py）
 #   5. hermes import-agent が作ったコピーのうち、dotfiles と同一で不要になったものを片付ける
 #
 # 秘密情報・メモリー（MEMORY.md / USER.md）は扱わない。dotfiles は公開リポジトリのため。
@@ -80,6 +81,10 @@ cron_has quota-alert || hermes cron create "every 1h" --no-agent --script quota-
 cron_has subscription-review || hermes cron create "every monday 9am" "$(cat "$HERE/cron/subscription-review.md")" \
   --name subscription-review --script subscription-snapshot.py --continuity --catch-up on \
   --provider openai-codex --model gpt-6.2-sol --reasoning-effort medium --deliver local >/dev/null
+
+# 4d. Zed から ACP で Hermes を使う（settings.json の agent_servers に hermes-agent を足す）
+#     Dock から起動した Zed は PATH を引き継がないことがあるため、hermes は絶対パスで書く
+python3 "$HERE/scripts/zed-acp.py" "$(command -v hermes)"
 
 # 5. import-agent の残骸（dotfiles と完全に同一のコピーだけ消す）
 IMPORTS="$HERMES_HOME/skills/claude-code-imports"
