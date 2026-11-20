@@ -140,6 +140,7 @@
 ## キー定義（distill）
 `type` / `date` / `ai` / `domain`（多値可）/ `status` / `sources` / `spawned` / `moc`
 
+- `ai` … セッションを行ったエージェント（単一）。`codex` / `claude` / `gemini` / `chatgpt` / `magi` / `hermes`。モデルではなく、使ったツールで選ぶ（例: Hermes 上で Claude のモデルを使ったセッションは `hermes`）。
 - `sources` … 出自（会話URL or `[[log]]`、多値可）。
 - `spawned` … この distill から materialize した atomic note の `[[Wikilink]]`（多値）。
 - `moc` … `status: final` 後に成果を委譲した先のトピックハブ `[[topic MOC]]`（単一・任意。MOC 未作成なら省略）。

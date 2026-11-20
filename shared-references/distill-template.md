@@ -6,7 +6,7 @@
 ---
 type: distill
 date: <YYYY-MM-DD>
-ai: <codex|claude|gemini|chatgpt|magi>
+ai: <codex|claude|gemini|chatgpt|magi|hermes>
 domain: [<関係する領域。多値可>]
 status: draft
 sources: ["<会話URL もしくは [[log]]>"]
