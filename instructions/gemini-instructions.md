@@ -28,4 +28,4 @@ echo hi
 6. **物理的アナロジー＋視覚化**：直感的・動的なモデルを必ず用意。テキストに加え画像生成・Web 画像も積極的に使い、正確かつ直感的に図解する。
 
 # アプリ・ツールを開発する場合の規約
-`~/Github/dotfiles/shared-references/dev/` の `workflow.md`・`principles.md`・`versioning.md` を読んでから着手する。プロジェクト直下の `PLAN.md` を唯一の正本にし、ステップごとに版を上げて報告の先頭で伝える。
+`~/Github/dotfiles/shared-references/dev/` の `workflow.md`・`principles.md`・`versioning.md` を読んでから着手する。プロジェクト直下の `PLAN.md` を唯一の正本にし（要望の原文は `WISHLIST.md`。無ければ `workflow.md` の手順で移行する）、ステップごとに版を上げて報告の先頭で伝える。

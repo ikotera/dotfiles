@@ -42,7 +42,7 @@ file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化�
 | `versioning.md` | ステップ単位の SemVer、メイン画面への版の表示、`bump_version.sh` |
 | `stack-selection.md` | Rust コア＋フロントエンド（SwiftUI・GPUI・Tauri 等）の選び方、ワークスペースの決まりごと |
 | `macos-look-and-feel.md` | 参照アプリ（Finder 等）に合わせるためのチェック項目 |
-| `templates/` | `PLAN.md`・`AGENTS.md`・`CLAUDE.md`・`Cargo.toml`・`gitignore`・`scripts/`（`bump_version.sh`・`bundle.sh`・`make_icon.swift`） |
+| `templates/` | `PLAN.md`・`WISHLIST.md`・`AGENTS.md`・`CLAUDE.md`・`Cargo.toml`・`gitignore`・`scripts/`（`bump_version.sh`・`bundle.sh`・`make_icon.swift`） |
 
 ## CLAUDE.md と AGENTS.md の関係
 

@@ -14,7 +14,7 @@ description: アプリやツールを新しく作る・既存のプロジェク�
 | 作業 | 読むファイル |
 |---|---|
 | 新しいプロジェクトを始める | `references/workflow.md`（A）→ `references/principles.md` → `references/stack-selection.md` → `references/templates/` |
-| 要望を実装する（1回分） | `references/workflow.md`（B）→ プロジェクトの `PLAN.md` |
+| 要望を実装する（1回分） | `references/workflow.md`（B）→ プロジェクトの `WISHLIST.md`・`PLAN.md` |
 | 画面を作る・参照アプリに寄せる | `references/macos-look-and-feel.md` |
 | 版を上げる・報告する | `references/versioning.md` |
 | 気づきを残す・distill する | `references/workflow.md`（D）→ skill `session-distill-to-knowledge-base` |
@@ -22,7 +22,7 @@ description: アプリやツールを新しく作る・既存のプロジェク�
 ## 必ず守ること
 
 1. **着手前に knowledge-base を調べる**（`workflow.md` の C）。関係する MOC・distill を読み、PLAN §1.4 に書く。
-2. **PLAN.md を唯一の正本にする**。チャットでの依頼も §7 に転記し、計画書の外に要望・判断を置かない。
+2. **PLAN.md を唯一の正本にし、要望の原文だけは `WISHLIST.md` に置く**。WISHLIST.md はシンプルな箇条書きで、要望の間に空白行を挟む。チャットでの依頼も WISHLIST.md に足してから §7 に転記し、この2つの外に要望・判断を置かない。`WISHLIST.md` が無いプロジェクトでは、着手前に移行する（`workflow.md` の「WISHLIST.md への移行」）。
 3. **コアを先に、単体テストで固める**。データを壊しうる処理は 計画 → プレビュー → 記録 → 実行 → 取り消し。
 4. **計測する**。土台のコストを S0 で測り、性能に関わる変更は PLAN §11 に記録する。
 5. **参照アプリに合わせる**。似た標準アプリがあれば、見た目・配置・用語・キー割り当て・メニューの並びまで合わせる。
