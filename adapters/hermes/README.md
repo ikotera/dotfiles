@@ -73,7 +73,7 @@ Hermes デスクトップ内のブラウザで開くと、権限を個別に選�
 試して使わなかった方法（2026-11-20）:
 
 - `browser.use_real_profile`（普段の Edge のプロファイルを写す）: gateway の Python（`~/.hermes/tools/python-3.14.9+…/bin/python3.14`）にフルディスクアクセスを与えれば写せるが、Edge が起動中だとプロファイルがロックされていて使えない。
-- `browser.user_data_dir` + `executable_path`（Hermes が専用フォルダで Edge を起動）: Hermes が headless で起動し直すと、ログイン用 Cookie が消えた（暗号を解けずに破棄されたと推測）。
+- `browser.user_data_dir` + `executable_path`（Hermes が専用フォルダで Edge を起動）: ログイン用 Cookie が消えた。原因は headless ではなく、Hermes が `executable_path` の Edge を同梱 Chromium と同じ扱いにして `--use-mock-keychain --password-store=basic` を付けること（`tools/browser_launcher.py` の `packaged = executable is None`）。キーチェーンの鍵で暗号化された Cookie を解けず、捨ててしまう。プロファイルの複製で、このオプションを付けたときだけ再現した（headless・画面ありの両方とも、付けなければ問題なし）。
 - Edge 内で別プロファイルを作る: 普段のデータフォルダの中にできるので、上と同じ制約を受ける。
 
 ## setup.sh がすること
