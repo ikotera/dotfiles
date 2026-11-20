@@ -12,6 +12,8 @@ adapters/hermes/
   SOUL.md           # Hermes の人格設定（~/.hermes/SOUL.md へ symlink）
   skills/           # Hermes の仕組みに依存するスキル（skills.external_dirs で読み込み）
     dotfiles-skill-proposals/   # 共有スキルへの変更提案を確認・反映する手順
+  scripts/
+    google_setup_narrow.py      # Google 連携を Gmail・カレンダーの権限だけで行うラッパー
 ```
 
 ## 他のエージェントとの対応
@@ -42,6 +44,30 @@ Hermes には会話のあとに自動でスキルを改善する機能（backgro
 自動スキル改善が起動するのは、前回の改善または `skill_manage` からツール呼び出しが `skills.creation_nudge_interval`（既定 15）回たまったとき。学ぶことがなければ何も変えない。
 
 あわせて `bin/sync.sh` は、`skills/*/references/` の symlink が実ファイルに変わった変更を自動 commit しない。Hermes の `skill_manage` は、まとめて行う操作が失敗すると巻き戻しのためにスキルのファイルを書き戻し、そのとき `references/` の symlink を実ファイルに置き換えてしまう（2026-11-20 に実際に起きた）。
+
+## 外部サービスとの連携
+
+| サービス | Hermes での方法 | マシンごとに必要な作業 |
+|---|---|---|
+| GitHub | `gh` CLI | `gh auth login` |
+| Interactive Brokers | リモート MCP `https://api.ibkr.com/v1/api/mcp-public`（`trust: untrusted` で書き込み系は毎回承認） | `hermes mcp login ibkr` |
+| Plaud | リモート MCP `https://mcp.plaud.ai/mcp` | `hermes mcp login plaud` |
+| Gmail・Google Calendar | Hermes 標準スキル `google-workspace` | 下記 |
+| Chrome/Edge | `browser.use_real_profile: true`（既定ブラウザのログイン状態を写したプロファイルで操作） | 下記 |
+
+URL と設定は `setup.sh` が入れる。トークン・クライアントの秘密情報は `~/.hermes/` に置き、dotfiles には入れない。
+
+**Google**: Google Cloud でデスクトップアプリ用の OAuth クライアントを作り、Gmail API と Google Calendar API を有効にし、自分をテストユーザーに追加する。`google-workspace` の `setup.py` は Drive・Docs・Sheets・連絡先まで一括で要求するので、`scripts/google_setup_narrow.py` で権限を絞る。Hermes の Python（`hermes` の venv、ターミナルの `python`）で実行する。
+
+```bash
+python adapters/hermes/scripts/google_setup_narrow.py --client-secret ~/Downloads/client_secret_….json
+python adapters/hermes/scripts/google_setup_narrow.py --auth-url     # 出た URL を「外部ブラウザ」で開く
+python adapters/hermes/scripts/google_setup_narrow.py --auth-code '<リダイレクト先の URL まるごと>'
+```
+
+Hermes デスクトップ内のブラウザで開くと、権限を個別に選べない旧式の同意画面になり、許可しても先へ進まない（2026-11-20 に確認）。許可後の `http://localhost:1/…` は ERR_UNSAFE_PORT で開けないが、それで正常。アドレスバーの URL を渡す。
+
+**Chrome/Edge**: macOS は Hermes がブラウザのプロフィールフォルダを読むのを拒否する。gateway は `Hermes.app` の子ではなく osascript 経由で起動した Hermes 同梱の Python で動くため、フルディスクアクセスには `~/.hermes/tools/python-3.14.9+…/bin/python3.14` を追加し、`hermes gateway restart` する（`Hermes.app` を許可しただけでは足りない）。
 
 ## setup.sh がすること
 
