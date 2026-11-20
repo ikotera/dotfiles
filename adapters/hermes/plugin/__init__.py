@@ -300,8 +300,9 @@ def _proposal_skill(p: Path) -> str:
     return m.group(1) if m else p.stem
 
 
-def _notify_proposals(session_id=None, platform=None, **_kwargs):
-    if os.environ.get("DOTFILES_HERMES_NOTIFY") == "0" or platform == "cron":
+def _notify_proposals(session_id=None, platform=None, parent_session_id=None, **_kwargs):
+    # サブエージェント（親セッションを持つ）には出さない。出すと委任の回答に通知文が混ざる
+    if os.environ.get("DOTFILES_HERMES_NOTIFY") == "0" or platform == "cron" or parent_session_id:
         return None
     pending = _pending_proposals()
     if not pending:

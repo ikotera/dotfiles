@@ -7,6 +7,7 @@
 #   2. SOUL.md（Hermes の人格設定）を dotfiles の正本へ symlink
 #   3. skills.external_dirs に dotfiles の skills/ と adapters/hermes/skills/ を登録
 #   4. OBSIDIAN_VAULT_PATH に knowledge-base を設定（$HERMES_HOME/.env）
+#   4c. Claude と ChatGPT の使い分け（scripts/apply-model-routing.sh）と残量確認の cron
 #   5. hermes import-agent が作ったコピーのうち、dotfiles と同一で不要になったものを片付ける
 #
 # 秘密情報・メモリー（MEMORY.md / USER.md）は扱わない。dotfiles は公開リポジトリのため。
@@ -63,6 +64,22 @@ hermes config set browser.use_real_profile false
 hermes config set browser.executable_path ""
 hermes config set browser.user_data_dir ""
 hermes config set browser.cdp_url "http://127.0.0.1:${HERMES_EDGE_PORT:-9222}"
+
+# 4c. Claude と ChatGPT の使い分け（ルート・予備の接続先・裏方処理。手順の正本はスキル quota-aware-routing）
+bash "$HERE/scripts/apply-model-routing.sh"
+#     cron は ~/.hermes/scripts/ の外を指す symlink を拒むため、コピーで置く（正本は dotfiles）
+mkdir -p "$HERMES_HOME/scripts"
+for f in quota-status.py quota-alert.sh subscription-snapshot.py; do
+  install -m 755 "$HERE/scripts/$f" "$HERMES_HOME/scripts/$f"
+done
+CRON_LIST="$(hermes cron list 2>/dev/null || true)"   # pipefail 下で grep -q に直接つなぐと SIGPIPE で誤判定する
+cron_has() { grep -q "Name: *$1\$" <<<"$CRON_LIST"; }
+cron_has quota-alert || hermes cron create "every 1h" --no-agent --script quota-alert.sh \
+  --name quota-alert --deliver local --catch-up off >/dev/null
+#     週次の確認。結果はチャットで受け取りたいので、届け先は作成後に Hermes の中で付け直す（CLI からは local）
+cron_has subscription-review || hermes cron create "every monday 9am" "$(cat "$HERE/cron/subscription-review.md")" \
+  --name subscription-review --script subscription-snapshot.py --continuity --catch-up on \
+  --provider openai-codex --model gpt-6.2-sol --reasoning-effort medium --deliver local >/dev/null
 
 # 5. import-agent の残骸（dotfiles と完全に同一のコピーだけ消す）
 IMPORTS="$HERMES_HOME/skills/claude-code-imports"
