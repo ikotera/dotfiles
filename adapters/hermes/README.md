@@ -14,6 +14,7 @@ adapters/hermes/
     dotfiles-skill-proposals/   # 共有スキルへの変更提案を確認・反映する手順
   scripts/
     google_setup_narrow.py      # Google 連携を Gmail・カレンダーの権限だけで行うラッパー
+    hermes-edge.sh              # Hermes 専用の Edge を起動する（Hermes はこれに接続して操作）
 ```
 
 ## 他のエージェントとの対応
@@ -53,7 +54,7 @@ Hermes には会話のあとに自動でスキルを改善する機能（backgro
 | Interactive Brokers | リモート MCP `https://api.ibkr.com/v1/api/mcp-public`（`trust: untrusted` で書き込み系は毎回承認） | `hermes mcp login ibkr` |
 | Plaud | リモート MCP `https://mcp.plaud.ai/mcp` | `hermes mcp login plaud` |
 | Gmail・Google Calendar | Hermes 標準スキル `google-workspace` | 下記 |
-| Chrome/Edge | Hermes 専用のデータフォルダ（`~/.hermes/edge-profile`）で Edge を起動して操作 | 下記 |
+| Chrome/Edge | Hermes 専用の Edge（`~/.hermes/edge-profile`）を開いておき、`browser.cdp_url` で接続して操作 | 下記 |
 
 URL と設定は `setup.sh` が入れる。トークン・クライアントの秘密情報は `~/.hermes/` に置き、dotfiles には入れない。
 
@@ -67,11 +68,13 @@ python adapters/hermes/scripts/google_setup_narrow.py --auth-code '<リダイレ
 
 Hermes デスクトップ内のブラウザで開くと、権限を個別に選べない旧式の同意画面になり、許可しても先へ進まない（2026-11-20 に確認）。許可後の `http://localhost:1/…` は ERR_UNSAFE_PORT で開けないが、それで正常。アドレスバーの URL を渡す。
 
-**Chrome/Edge**: 普段のプロファイルを写す `browser.use_real_profile` は使わない。macOS が gateway からブラウザのプロフィールフォルダの読み取りを拒否し、`Hermes.app` と同梱の `python3.14` にフルディスクアクセスを与えても解消しなかった（gateway は osascript 経由で起動され、親から切り離されるため、許可の判定先が別になっていると推測）。代わりに `setup.sh` が Edge を Hermes 専用のデータフォルダで使う設定にする。Edge 内で作った別プロファイルは普段のデータフォルダの中にあるので、この用途には使えない。初回だけ、次のコマンドで開いた Edge で、Hermes に使わせるサイトにログインして Edge を終了する。
+**Chrome/Edge**: `scripts/hermes-edge.sh` で Hermes 専用の Edge（データフォルダ `~/.hermes/edge-profile`、ポート 9222）を起動し、そのウィンドウで Hermes に使わせるサイトにだけログインしておく。Hermes は `browser.cdp_url: http://127.0.0.1:9222` で接続する。専用の Edge が起動していないと、Hermes はブラウザを使えない。起動中は、同じ Mac のほかのプログラムもこの Edge を操作できる。
 
-```bash
-open -na "Microsoft Edge" --args --user-data-dir="$HOME/.hermes/edge-profile" --no-first-run --no-default-browser-check
-```
+試して使わなかった方法（2026-11-20）:
+
+- `browser.use_real_profile`（普段の Edge のプロファイルを写す）: gateway の Python（`~/.hermes/tools/python-3.14.9+…/bin/python3.14`）にフルディスクアクセスを与えれば写せるが、Edge が起動中だとプロファイルがロックされていて使えない。
+- `browser.user_data_dir` + `executable_path`（Hermes が専用フォルダで Edge を起動）: Hermes が headless で起動し直すと、ログイン用 Cookie が消えた（暗号を解けずに破棄されたと推測）。
+- Edge 内で別プロファイルを作る: 普段のデータフォルダの中にできるので、上と同じ制約を受ける。
 
 ## setup.sh がすること
 

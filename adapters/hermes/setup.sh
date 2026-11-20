@@ -55,15 +55,14 @@ mcp_remote() {  # mcp_remote <名前> <URL> [trust]
 }
 mcp_remote ibkr https://api.ibkr.com/v1/api/mcp-public untrusted   # 発注など書き込み系は毎回承認
 mcp_remote plaud https://mcp.plaud.ai/mcp
-# ブラウザ: Hermes 専用のデータフォルダで Edge を動かす（必要なサイトに一度だけログインしておく）。
-# 普段のプロファイルを写す use_real_profile は、macOS が gateway からの読み取りを拒否するため使わない。
-EDGE="/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-if [ -x "$EDGE" ]; then
-  mkdir -p "$HERMES_HOME/edge-profile" && chmod 700 "$HERMES_HOME/edge-profile"
-  hermes config set browser.use_real_profile false
-  hermes config set browser.executable_path "$EDGE"
-  hermes config set browser.user_data_dir "$HERMES_HOME/edge-profile"
-fi
+# ブラウザ: Hermes 専用の Edge（scripts/hermes-edge.sh で起動、~/.hermes/edge-profile）に接続して操作する。
+# Hermes に Edge を起動させると（headless）ログイン用 Cookie が消え、普段のプロファイルを写す
+# use_real_profile は Edge を終了していないと使えないため、どちらも使わない。
+chmod +x "$HERE/scripts/hermes-edge.sh"
+hermes config set browser.use_real_profile false
+hermes config set browser.executable_path ""
+hermes config set browser.user_data_dir ""
+hermes config set browser.cdp_url "http://127.0.0.1:${HERMES_EDGE_PORT:-9222}"
 
 # 5. import-agent の残骸（dotfiles と完全に同一のコピーだけ消す）
 IMPORTS="$HERMES_HOME/skills/claude-code-imports"
