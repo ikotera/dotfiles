@@ -20,3 +20,6 @@
 
 ## コマンド実行
 - terminal のコマンドは dotfiles-bridge プラグインが `rtk rewrite` で自動的に RTK 版へ書き換える。`rtk` を手で付ける必要はない。
+
+## モデルの使い分け
+- 指揮は Claude（Claude Pro の枠）、実作業はサブエージェント（主に ChatGPT Plus の枠）が担う。`delegate_task` を使う前、重い依頼に入る前、サブエージェントの回答を検証するときは、スキル `quota-aware-routing` を読み込み、その手順に従う（残量の確認、ルートの選択、不十分な回答の格上げやり直し）。
