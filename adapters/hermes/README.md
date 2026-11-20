@@ -8,7 +8,7 @@ adapters/hermes/
   setup.sh          # 何度実行してもよいセットアップ（下記）
   plugin/           # Hermes プラグイン dotfiles-bridge（~/.hermes/plugins/dotfiles-bridge へ symlink）
     plugin.yaml
-    __init__.py     #  1) 共通規約の注入  2) terminal コマンドの RTK 化  3) 共有スキルの保護
+    __init__.py     #  1) 共通規約の注入  2) terminal コマンドの RTK 化  3) 共有スキルの保護  4) 提案の通知
   SOUL.md           # Hermes の人格設定（~/.hermes/SOUL.md へ symlink）
   skills/           # Hermes の仕組みに依存するスキル（skills.external_dirs で読み込み）
     dotfiles-skill-proposals/   # 共有スキルへの変更提案を確認・反映する手順
@@ -36,6 +36,10 @@ Hermes には会話のあとに自動でスキルを改善する機能（backgro
 | それ以外 | Hermes 自身のスキル（`~/.hermes/skills/`）・メモリー・curator | 干渉しない |
 
 提案の確認と反映は、Hermes に「スキルの提案を確認して」と頼む（スキル `dotfiles-skill-proposals`）。
+
+頼まなくても、未処理の提案が増えると Hermes が次の返答の最後で一行だけ確認を勧める（`pre_llm_call` で、その回の発言に通知を添える。システムプロンプトは変えないのでプロンプトキャッシュは崩れない）。同じ提案を知らせるのは1つの会話で1回だけで、新しい提案が増えたときにだけ再び知らせる。定期実行（cron）の会話では知らせない。`DOTFILES_HERMES_NOTIFY=0` で止められる。
+
+自動スキル改善が起動するのは、前回の改善または `skill_manage` からツール呼び出しが `skills.creation_nudge_interval`（既定 15）回たまったとき。学ぶことがなければ何も変えない。
 
 あわせて `bin/sync.sh` は、`skills/*/references/` の symlink が実ファイルに変わった変更を自動 commit しない。Hermes の `skill_manage` は、まとめて行う操作が失敗すると巻き戻しのためにスキルのファイルを書き戻し、そのとき `references/` の symlink を実ファイルに置き換えてしまう（2026-11-20 に実際に起きた）。
 

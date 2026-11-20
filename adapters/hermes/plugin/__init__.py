@@ -17,6 +17,10 @@
      リポジトリへ push され、Claude Code・Codex も読むため、採否はユーザーが決める。
      Hermes 自身のスキル（~/.hermes/skills/）・メモリー・curator には干渉しない。
      採用は write_file / patch で dotfiles のファイルを直接編集する（その際は承認を求める）。
+  4. 提案の通知
+     未処理の提案が増えたら、次のユーザー発言に「返答の最後で一行だけ確認を勧める」
+     指示を添える（pre_llm_call。システムプロンプトは変えないのでキャッシュを崩さない）。
+     同じ提案を知らせるのは 1 セッションにつき 1 回。新しい提案が増えたときだけ再び知らせる。
 
 Hermes の制約（2026-11 時点のソースで確認）:
   - プラグインの節は 1 節 4,000 字、全節の合計 8,000 字（見出し込み）まで。
@@ -28,6 +32,7 @@ Hermes の制約（2026-11 時点のソースで確認）:
   DOTFILES_DIR             dotfiles の場所（既定: このファイルの位置から解決）
   DOTFILES_HERMES_RTK=0    RTK の自動書き換えを止める
   DOTFILES_HERMES_GUARD=0  共有スキルの保護を止める
+  DOTFILES_HERMES_NOTIFY=0 提案の通知を止める
 """
 from __future__ import annotations
 
@@ -263,6 +268,56 @@ def _guard_shared_skills(tool_name=None, args=None, session_id=None, task_id=Non
     return None
 
 
+# ---------------------------------------------------------------------------
+# 4. 提案の通知
+# ---------------------------------------------------------------------------
+_announced: dict[str, set[str]] = {}   # session_id -> 知らせ済みの提案ファイル名
+_ANNOUNCED_MAX = 500                    # 常駐プロセスで増え続けないように
+
+
+def _pending_proposals() -> list[Path]:
+    d = _hermes_home() / "skill-proposals"
+    try:
+        return sorted(p for p in d.glob("*.md") if p.is_file())
+    except OSError:
+        return []
+
+
+def _proposal_skill(p: Path) -> str:
+    # 20261120-140647-obsidian-moc.md / 同秒の重複は末尾 -2 など
+    m = re.match(r"^\d{8}-\d{6}-(.+?)(?:-\d+)?\.md$", p.name)
+    return m.group(1) if m else p.stem
+
+
+def _notify_proposals(session_id=None, platform=None, **_kwargs):
+    if os.environ.get("DOTFILES_HERMES_NOTIFY") == "0" or platform == "cron":
+        return None
+    pending = _pending_proposals()
+    if not pending:
+        return None
+    key = str(session_id or "-")
+    seen = _announced.setdefault(key, set())
+    new = [p for p in pending if p.name not in seen]
+    if not new:
+        return None
+    if len(_announced) > _ANNOUNCED_MAX:
+        _announced.clear()
+        _announced[key] = seen
+    seen.update(p.name for p in pending)
+    skills = sorted({_proposal_skill(p) for p in pending})
+    oldest = pending[0].name[:8]
+    return {"context": (
+        "[dotfiles-bridge] dotfiles の共有スキルへの変更提案が未処理で "
+        f"{len(pending)} 件ある（対象: {', '.join(skills)}。最も古いもの: {oldest[:4]}-{oldest[4:6]}-{oldest[6:]}。"
+        f"保存先: {_hermes_home() / 'skill-proposals'}）。"
+        "これはユーザーの発言ではなく自動の通知。今回の依頼にまず答え、返答の最後に一行だけ"
+        "「共有スキルの変更提案が N 件あります。確認しますか？」の形で確認を勧める。"
+        "依頼の内容が急ぎ・別件の作業の途中なら、それを妨げない短さにする。"
+        "ユーザーが了承したらスキル dotfiles-skill-proposals の手順で処理する。"
+        "この通知に触れるのは今回の返答だけでよい。"
+    )}
+
+
 def register(ctx):
     n = len(_render())
     ctx.register_system_prompt_section("dotfiles.hermes", _slot(0), max_chars=SECTION_MAX)
@@ -270,3 +325,4 @@ def register(ctx):
         ctx.register_system_prompt_section(f"dotfiles.shared-{i}", _slot(i), max_chars=SECTION_MAX)
     ctx.register_hook("pre_tool_call", _rtk_rewrite)
     ctx.register_hook("pre_tool_call", _guard_shared_skills)
+    ctx.register_hook("pre_llm_call", _notify_proposals)
