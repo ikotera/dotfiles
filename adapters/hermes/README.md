@@ -8,7 +8,7 @@ adapters/hermes/
   setup.sh          # 何度実行してもよいセットアップ（下記）
   plugin/           # Hermes プラグイン dotfiles-bridge（~/.hermes/plugins/dotfiles-bridge へ symlink）
     plugin.yaml
-    __init__.py     #  1) 共通規約の注入  2) terminal コマンドの RTK 化  3) 共有スキルの保護  4) 提案の通知
+    __init__.py     #  1) 共通規約の注入  2) RTK 化  3) 共有スキルの保護  4) 提案の通知  5) 専用 Edge の自動起動・終了
   SOUL.md           # Hermes の人格設定（~/.hermes/SOUL.md へ symlink）
   skills/           # Hermes の仕組みに依存するスキル（skills.external_dirs で読み込み）
     dotfiles-skill-proposals/   # 共有スキルへの変更提案を確認・反映する手順
@@ -68,7 +68,7 @@ python adapters/hermes/scripts/google_setup_narrow.py --auth-code '<リダイレ
 
 Hermes デスクトップ内のブラウザで開くと、権限を個別に選べない旧式の同意画面になり、許可しても先へ進まない（2026-11-20 に確認）。許可後の `http://localhost:1/…` は ERR_UNSAFE_PORT で開けないが、それで正常。アドレスバーの URL を渡す。
 
-**Chrome/Edge**: `scripts/hermes-edge.sh` で Hermes 専用の Edge（データフォルダ `~/.hermes/edge-profile`、ポート 9222）を起動し、そのウィンドウで Hermes に使わせるサイトにだけログインしておく。Hermes は `browser.cdp_url: http://127.0.0.1:9222` で接続する。専用の Edge が起動していないと、Hermes はブラウザを使えない。起動中は、同じ Mac のほかのプログラムもこの Edge を操作できる。
+**Chrome/Edge**: Hermes 専用の Edge（データフォルダ `~/.hermes/edge-profile`、ポート 9222）に `browser.cdp_url: http://127.0.0.1:9222` で接続する。Hermes がブラウザのツールを使う直前に、起動していなければ dotfiles-bridge が `scripts/hermes-edge.sh` で前面に出さずに起動し（約4秒）、ブラウザを使わない時間が 10 分続くと終了する（`DOTFILES_HERMES_EDGE_IDLE_MIN` で変更、0 で終了しない）。手で起動した Edge は終了しない。サイトへのログインは `scripts/hermes-edge.sh` を直接実行して開いたウィンドウで行う。起動中は、同じ Mac のほかのプログラムもこの Edge を操作できる。
 
 試して使わなかった方法（2026-11-20）:
 

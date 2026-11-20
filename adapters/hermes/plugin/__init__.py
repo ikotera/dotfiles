@@ -21,6 +21,11 @@
      未処理の提案が増えたら、次のユーザー発言に「返答の最後で一行だけ確認を勧める」
      指示を添える（pre_llm_call。システムプロンプトは変えないのでキャッシュを崩さない）。
      同じ提案を知らせるのは 1 セッションにつき 1 回。新しい提案が増えたときだけ再び知らせる。
+  5. 専用 Edge の自動起動・自動終了
+     Hermes がブラウザのツールを使う直前に、専用 Edge（scripts/hermes-edge.sh、
+     ~/.hermes/edge-profile、ポート 9222）が起動していなければ、前面に出さずに起動して待つ。
+     このプラグインが起動した Edge は、ブラウザを使わない時間が一定（既定 10 分）続くと終了する。
+     手で起動した Edge は終了しない。Hermes 自身に起動させない（headless で起動し直すと Cookie が消えた）。
 
 Hermes の制約（2026-11 時点のソースで確認）:
   - プラグインの節は 1 節 4,000 字、全節の合計 8,000 字（見出し込み）まで。
@@ -33,6 +38,8 @@ Hermes の制約（2026-11 時点のソースで確認）:
   DOTFILES_HERMES_RTK=0    RTK の自動書き換えを止める
   DOTFILES_HERMES_GUARD=0  共有スキルの保護を止める
   DOTFILES_HERMES_NOTIFY=0 提案の通知を止める
+  DOTFILES_HERMES_EDGE=0   専用 Edge の自動起動・自動終了を止める
+  DOTFILES_HERMES_EDGE_IDLE_MIN  自動終了までの分数（既定 10、0 で自動終了しない）
 """
 from __future__ import annotations
 
@@ -40,6 +47,10 @@ import datetime as _dt
 import json
 import logging
 import os
+import signal
+import threading
+import time
+import urllib.request
 import re
 import shutil
 import subprocess
@@ -318,6 +329,90 @@ def _notify_proposals(session_id=None, platform=None, **_kwargs):
     )}
 
 
+# ---------------------------------------------------------------------------
+# 5. 専用 Edge の自動起動・自動終了
+# ---------------------------------------------------------------------------
+_BROWSER_TOOLS = {"browser_exec", "browser_cdp", "browser_dialog", "browser_vault"}
+_EDGE_PORT = int(os.environ.get("HERMES_EDGE_PORT") or 9222)
+_edge_lock = threading.Lock()
+_edge_state = {"pid": None, "last_use": 0.0, "watcher": False}
+
+
+def _edge_up(timeout: float = 0.5) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{_EDGE_PORT}/json/version", timeout=timeout) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _edge_pid():
+    """専用データフォルダを使っている Edge 本体の pid（SingletonLock のリンク先 "<host>-<pid>"）。"""
+    try:
+        target = os.readlink(_hermes_home() / "edge-profile" / "SingletonLock")
+        pid = int(target.rsplit("-", 1)[1])
+        os.kill(pid, 0)
+        return pid
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _idle_limit() -> float:
+    try:
+        return float(os.environ.get("DOTFILES_HERMES_EDGE_IDLE_MIN", "10")) * 60
+    except ValueError:
+        return 600.0
+
+
+def _edge_watcher():
+    while True:
+        time.sleep(30)
+        try:
+            limit = _idle_limit()
+            with _edge_lock:
+                pid, last = _edge_state["pid"], _edge_state["last_use"]
+                if not pid or limit <= 0 or time.time() - last < limit:
+                    continue
+                if _edge_pid() == pid:
+                    os.kill(pid, signal.SIGTERM)  # Chromium は SIGTERM で通常終了する（Cookie も保存される）
+                    logger.info("dotfiles-bridge: idle のため専用 Edge (pid %s) を終了", pid)
+                _edge_state["pid"] = None
+        except Exception as e:  # noqa: BLE001
+            logger.debug("dotfiles-bridge: edge watcher: %s", e)
+
+
+def _ensure_edge(tool_name=None, **_kwargs):
+    if tool_name not in _BROWSER_TOOLS or os.environ.get("DOTFILES_HERMES_EDGE") == "0":
+        return None
+    with _edge_lock:
+        _edge_state["last_use"] = time.time()
+        if _edge_up():
+            return None
+        script = _DOTFILES / "adapters" / "hermes" / "scripts" / "hermes-edge.sh"
+        try:
+            subprocess.run(["/bin/sh", str(script)], env={**os.environ, "HERMES_EDGE_BACKGROUND": "1"},
+                           capture_output=True, timeout=10)
+        except Exception as e:  # noqa: BLE001 — 起動できなくてもツールは通す（エラーはツール側で出る）
+            logger.warning("dotfiles-bridge: 専用 Edge を起動できません: %s", e)
+            return None
+        deadline = time.time() + 20
+        while time.time() < deadline and not _edge_up():
+            time.sleep(0.5)
+        if _edge_up():
+            _edge_state["pid"] = _edge_pid()
+            _edge_state["last_use"] = time.time()
+            logger.info("dotfiles-bridge: 専用 Edge を起動 (pid %s)", _edge_state["pid"])
+            if not _edge_state["watcher"]:
+                threading.Thread(target=_edge_watcher, name="dotfiles-edge-idle", daemon=True).start()
+                _edge_state["watcher"] = True
+    return None
+
+
+def _touch_edge(tool_name=None, **_kwargs):
+    if tool_name in _BROWSER_TOOLS:
+        _edge_state["last_use"] = time.time()
+
+
 def register(ctx):
     n = len(_render())
     ctx.register_system_prompt_section("dotfiles.hermes", _slot(0), max_chars=SECTION_MAX)
@@ -326,3 +421,5 @@ def register(ctx):
     ctx.register_hook("pre_tool_call", _rtk_rewrite)
     ctx.register_hook("pre_tool_call", _guard_shared_skills)
     ctx.register_hook("pre_llm_call", _notify_proposals)
+    ctx.register_hook("pre_tool_call", _ensure_edge)
+    ctx.register_hook("post_tool_call", _touch_edge)
