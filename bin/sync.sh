@@ -11,6 +11,14 @@ git pull --rebase --autostash origin main
 
 if [ -n "$(git status --porcelain)" ]; then
   git add -A
+  # skills/*/references/ の symlink（shared-references/ への共有）が実ファイルに化けた変更は
+  # 自動では公開しない。エージェントのツールが「書き込み→rename」で symlink を置き換えることがある。
+  broken="$(git diff --cached --raw -- 'skills/*/references/*' | awk '$1 ~ /^:120000/ && $2 !~ /^120000/ {print $NF}')"
+  if [ -n "$broken" ]; then
+    git reset -q
+    echo "symlinked references became regular files; auto-commit aborted: $broken" >&2
+    exit 1
+  fi
   added="$(git diff --cached | grep '^+' || true)"
   if grep -q -E "$SECRET_RE" <<<"$added"; then
     git reset -q

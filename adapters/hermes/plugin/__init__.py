@@ -139,8 +139,6 @@ _RTK = shutil.which("rtk") or next(
 
 
 def _rtk_rewrite(tool_name=None, args=None, **_kwargs):
-    with open("/Users/ippeikotera/.hermes/cache/scratch/guard-debug.jsonl", "a") as _f:  # TEMP DEBUG
-        _f.write(json.dumps({"rtk_hook": tool_name, "pid": os.getpid(), "file": __file__}) + "\n")
     if tool_name not in _TERMINAL_TOOLS or not _RTK or os.environ.get("DOTFILES_HERMES_RTK") == "0":
         return None
     if not isinstance(args, dict):
@@ -233,11 +231,6 @@ def _save_proposal(ops: list, session_id, task_id) -> Path:
 
 
 def _guard_shared_skills(tool_name=None, args=None, session_id=None, task_id=None, **_kwargs):
-    if True:  # TEMP DEBUG
-        with open("/Users/ippeikotera/.hermes/cache/scratch/guard-debug.jsonl", "a") as _f:
-            _f.write(json.dumps({"tool": tool_name, "args_type": type(args).__name__, "keys": list(args)[:5] if isinstance(args, dict) else None,
-                                 "home": str(_hermes_home()), "dot": str(_DOTFILES), "HOME": os.environ.get("HOME"), "file": __file__,
-                                 "kw": list(_kwargs)}, ensure_ascii=False) + "\n")
     if os.environ.get("DOTFILES_HERMES_GUARD") == "0" or not isinstance(args, dict):
         return None
     if tool_name == "skill_manage":
