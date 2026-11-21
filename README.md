@@ -64,6 +64,7 @@ ln -sfn ~/Github/dotfiles/AGENTS.md ~/.codex/AGENTS.md
 ln -sfn ~/Github/dotfiles/instructions ~/.codex/instructions
 ln -sfn ~/Github/dotfiles/zsh/.zshrc ~/.zshrc
 ln -sfn ~/Github/dotfiles/cargo/config.toml ~/.cargo/config.toml
+ln -sfn ~/Github/dotfiles/bin/agent-reach-patch.py ~/.local/bin/agent-reach-patch   # Agent Reach を使う場合
 bash ~/Github/dotfiles/adapters/hermes/setup.sh   # Hermes を使う場合（何度実行してもよい）
 ```
 
@@ -77,7 +78,7 @@ API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshr
 
 `~/.agents` も同じ理由で実フォルダにし、`~/.agents/skills` に自作の skill を1件ずつリンクする。`~/.agents/skills` は複数のエージェントが共有する置き場所で、Codex が直接読み、`npx skills add -g` や `agent-reach setup` は第三者の skill の実体と `~/.agents/.skill-lock.json` をここへ書き込む。`~/.agents` を dotfiles への symlink にすると、それらがこのリポジトリに入って公開され（2026-11 に実際に起きた）、symlink をたどる書き込みを拒むツール（Agent Reach）は動かない。第三者の skill は git 管理外なので、別の Mac では `npx skills add -g <source>`（source は `~/.agents/.skill-lock.json` の `source`）や各ツールの手順で入れ直す。
 
-Agent Reach には手元の改変を当てている（`bin/agent-reach-patch.py`、`~/.local/bin/agent-reach-patch` へ symlink）。YouTube の字幕を元の言語の1本だけ取りに行くようにし（上流は自動翻訳の字幕まで取りに行き HTTP 429 になりやすい）、429 のあとの停止を 3600 秒から 600 秒にする。`agent-reach update` で元に戻るので、更新は `agent-reach-patch --update` で行う。
+Agent Reach には手元の改変を当てている（`bin/agent-reach-patch.py`、`~/.local/bin/agent-reach-patch` へ symlink）。YouTube の字幕を元の言語の1本だけ取りに行くようにし（上流は自動翻訳の字幕まで取りに行き HTTP 429 になりやすい）、429 のあとの停止を 3600 秒から 600 秒にする。`agent-reach update` で元に戻るので、更新は `agent-reach-patch --update` で行う。Hermes の cron `third-party-update`（毎週月曜8時、`adapters/hermes/scripts/third-party-update.sh`）が、Agent Reach と `npx skills` で入れたスキルの更新を確かめて自動で入れ、改変も当て直す。変化か失敗があったときだけ報告する。
 
 `~/.claude/CLAUDE.md` は symlink ではなく実ファイルにする（`rtk` 未導入なら1行目のみでよい）。
 
