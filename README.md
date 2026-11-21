@@ -55,7 +55,8 @@ file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化�
 
 ```bash
 git clone https://github.com/ikotera/dotfiles.git ~/Github/dotfiles
-ln -sfn ~/Github/dotfiles ~/.agents
+mkdir -p ~/.agents/skills   # 実フォルダ（dotfiles への symlink にしない）
+for s in ~/Github/dotfiles/skills/*/; do ln -sfn "${s%/}" ~/.agents/skills/"$(basename "$s")"; done
 mkdir -p ~/.claude/skills
 for s in ~/Github/dotfiles/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
 ln -sfn ~/Github/dotfiles/instructions ~/.claude/instructions
@@ -73,6 +74,8 @@ macOS 27.0 以降、`~/Library/Metadata/CoreSpotlight/DocumentProcessing/Pipelin
 API キー等の秘密やマシン固有の設定は、git 管理外の `~/.zshrc.local`（`chmod 600`）に書く。`~/.zshrc` の末尾で存在すれば読み込まれる。
 
 `~/.claude/skills` はディレクトリごとリンクせず、実ディレクトリの中に skill を1件ずつリンクする。Claude デスクトップアプリが `~/.claude/skills/synced/` に Anthropic 製 skill（著作権表示つき・再配布不可）を同期するため、ディレクトリごとリンクするとそれがこのリポジトリに入り、自動同期で公開されてしまう（2026-09〜10 に実際に起きた）。念のため `.gitignore` にも `skills/synced/` を入れてある。
+
+`~/.agents` も同じ理由で実フォルダにし、`~/.agents/skills` に自作の skill を1件ずつリンクする。`~/.agents/skills` は複数のエージェントが共有する置き場所で、Codex が直接読み、`npx skills add -g` や `agent-reach setup` は第三者の skill の実体と `~/.agents/.skill-lock.json` をここへ書き込む。`~/.agents` を dotfiles への symlink にすると、それらがこのリポジトリに入って公開され（2026-11 に実際に起きた）、symlink をたどる書き込みを拒むツール（Agent Reach）は動かない。第三者の skill は git 管理外なので、別の Mac では `npx skills add -g <source>`（source は `~/.agents/.skill-lock.json` の `source`）や各ツールの手順で入れ直す。
 
 `~/.claude/CLAUDE.md` は symlink ではなく実ファイルにする（`rtk` 未導入なら1行目のみでよい）。
 

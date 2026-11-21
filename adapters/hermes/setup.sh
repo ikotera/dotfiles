@@ -5,7 +5,7 @@
 #   1. dotfiles-bridge プラグインを $HERMES_HOME/plugins へ symlink して有効化
 #      （共通規約の注入と RTK の自動適用。詳細は plugin/__init__.py）
 #   2. SOUL.md（Hermes の人格設定）を dotfiles の正本へ symlink
-#   3. skills.external_dirs に dotfiles の skills/ と adapters/hermes/skills/ を登録
+#   3. skills.external_dirs に ~/.agents/skills（無ければ dotfiles の skills/）と adapters/hermes/skills/ を登録
 #   4. OBSIDIAN_VAULT_PATH に knowledge-base を設定（$HERMES_HOME/.env）
 #   4c. Claude と ChatGPT の使い分け（scripts/apply-model-routing.sh）と残量確認の cron
 #   4d. Zed の外部エージェント（ACP）に Hermes を登録（scripts/zed-acp.py）
@@ -40,9 +40,10 @@ hermes plugins enable dotfiles-bridge >/dev/null 2>&1 || hermes plugins enable d
 # 2. SOUL.md
 link "$HERE/SOUL.md" "$HERMES_HOME/SOUL.md"
 
-# 3. 外部スキル（~/.agents は dotfiles への symlink。無ければ実体のパスを使う）
+# 3. 外部スキル（~/.agents/skills は手元の実フォルダ。自作は dotfiles から1件ずつ symlink、
+#    第三者のスキルは npx skills・agent-reach が実体を置く。無ければ dotfiles の skills/ を使う）
 SHARED_SKILLS="$DOTFILES/skills"
-[ "$(cd "$HOME/.agents" 2>/dev/null && pwd -P)" = "$(cd "$DOTFILES" && pwd -P)" ] && SHARED_SKILLS="~/.agents/skills"
+[ -d "$HOME/.agents/skills" ] && [ ! -L "$HOME/.agents" ] && SHARED_SKILLS="~/.agents/skills"
 hermes config set skills.external_dirs "[\"$SHARED_SKILLS\", \"$HERE/skills\"]"
 
 # 4. Obsidian の vault
