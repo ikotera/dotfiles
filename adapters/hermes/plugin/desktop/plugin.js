@@ -50,7 +50,8 @@ function QuotaChip({ ctx }) {
 }
 
 export default {
-  id: ID, name: 'Quota',
+  // Capabilities の行名はこの name に置き換わる（plugin-packages.ts）。パッケージ名と揃えて探せるようにする
+  id: ID, name: 'dotfiles-bridge',
   register(ctx) {
     ctx.register({ id: 'quota', area: 'statusBar.right', order: 130, render: () => jsx(QuotaChip, { ctx }) })
   }
