@@ -67,6 +67,7 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
      - 報告の形（コミットのハッシュ、変更したファイル、確かめられなかったこと）。
    - ユーザーとのやり取り（要望の転記、方針の判断）は自分で済ませ、手を動かす部分だけを渡す。
    - 独立した作業は、別々のサブエージェントに並行して任せてよい。ただし、同じファイルを触る作業は順に任せる。
+   - 子の作業中に指揮役が計画のファイル（PLAN.md 等）を直すときは、`git status` で子がまだそのファイルに触れていないことを確かめ、そのファイルだけを commit・push する。続けて `steer` で「commit の前に `git pull --rebase origin main` し、指揮役の変更を残す」と伝える。伝えないと、子の commit が指揮役の変更を上書きするか、push が拒まれる。
 4. **回答を検証する**（サブエージェントの「完了」をそのまま信じない）。次のどれかに当てはまれば不合格とする。
    - 目的や受け入れ条件の一部に答えていない。
    - 根拠（URL・ファイル・実行結果）がない。または、主要な主張を1つ自分で確かめたら食い違った。
@@ -86,7 +87,8 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
    | ネットワーク・ツール・一時的なエラー | 同じルートで1回だけやり直す |
    `deep` でも不合格なら `claude-backup` で再委任するか、手順2で自分で行える範囲なら自分で仕上げる。重要度が高いのに解決しないときは、未解決であることを明示してユーザーに報告する。
 6. **記録する**: 各試行（成功も含む）を同梱スキルの台帳に1行ずつ残す。次回以降のルートの提案に使われる。
-   `python3 ~/.hermes/plugins/advanced-delegation/skills/model-routing/scripts/route_ledger.py add --class <research|summary|…> --difficulty <1-5> --route <ルート> --outcome pass|fail --attempt <n> [--cause model|spec|context|env|flaky] --task "<内容>" --evidence "<確認した方法と結果>"`
+   `--class` は決まった値だけを受け付ける（code-bugfix・code-feature・code-refactor・code-tests・config-ops・data-extraction・data-migration・data-reshape・deliverable・docs-edit・file-ops・other・research・review・summary・ui-frontend）。
+   `python3 ~/.hermes/plugins/advanced-delegation/skills/model-routing/scripts/route_ledger.py add --class <上の値> --difficulty <1-5> --route <ルート> --outcome pass|fail --attempt <n> [--cause model|spec|context|env|flaky] --task "<内容>" --evidence "<確認した方法と結果>"`
 7. **報告する**: 格上げやり直しをしたときだけ、どのルートで何回やり直したかを1行添える。
 
 ## 落とし穴
