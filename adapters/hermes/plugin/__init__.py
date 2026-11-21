@@ -22,9 +22,11 @@
      dotfiles-skill-proposals の手順で処理し、判断に迷う提案だけユーザーに尋ねるよう指示を添える。
      pre_llm_call を使い、システムプロンプトは変えないのでキャッシュを崩さない。
      同じ提案を知らせるのは 1 セッションにつき 1 回。新しい提案が増えたときだけ再び知らせる。
-  5. 5時間枠の警告
-     Claude / OpenAI の使用率が80%以上なら、毎ターン指揮役に通知する。
-     残量の取得はバックグラウンドで行い、pre_llm_call はキャッシュだけを読む。
+  5. 残量の表示と委任先の自動切替
+     親セッションの活動中は3分ごとに Claude / OpenAI の5時間枠・週枠を観測し、
+     使用率・消費速度・リセットまでの予測から、新しい委任だけを設定済みのルートに振り替える。
+     Desktop のステータスバーに使用率を表示し、指揮役には状態が変わったとき・逼迫中に通知する。
+     取得はバックグラウンドで行い、フックと画面は残量の取得を待たない。
   6. 専用 Edge の自動起動・自動終了
      Hermes がブラウザのツールを使う直前に、専用 Edge（scripts/hermes-edge.sh、
      ~/.hermes/edge-profile、ポート 9222）が起動していなければ、前面に出さずに起動して待つ。
@@ -42,6 +44,9 @@ Hermes の制約（2026-11 時点のソースで確認）:
   DOTFILES_HERMES_RTK=0    RTK の自動書き換えを止める
   DOTFILES_HERMES_GUARD=0  共有スキルの保護を止める
   DOTFILES_HERMES_NOTIFY=0 提案の通知を止める
+  DOTFILES_HERMES_QUOTA_INTERVAL_SEC  残量の取得間隔（秒、既定 180）
+  DOTFILES_HERMES_QUOTA_ACTIVE_MIN    最後の親セッションの活動から監視を続ける時間（分、既定 30）
+  DOTFILES_HERMES_QUOTA_ROUTING=0     委任先の振替だけを止める（観測・表示は継続）
   DOTFILES_HERMES_EDGE=0   専用 Edge の自動起動・自動終了を止める
   DOTFILES_HERMES_EDGE_IDLE_MIN  自動終了までの分数（既定 10、0 で自動終了しない）
 """
@@ -60,6 +65,8 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+from . import quota
 
 logger = logging.getLogger(__name__)
 
@@ -335,103 +342,243 @@ def _notify_proposals(session_id=None, platform=None, parent_session_id=None, **
 
 
 # ---------------------------------------------------------------------------
-# 5. 5時間枠の警告（更新はフックの外で行う）
+# 5. 残量の観測と、新規委任先の振替（取得はフックの外で行う）
 # ---------------------------------------------------------------------------
-_QUOTA_TTL = 10 * 60
-_QUOTA_WINDOWS = {"claude": "Current session", "openai": "Session"}
-_quota_refresh_lock = threading.Lock()
+_quota_cond = threading.Condition()
+_quota_thread = None
+_quota_schedule = {}  # home → (最終活動時刻, 次に観測する時刻)。時計の補正に左右されない。
+_quota_announced = {}
+_QUOTA_NOTICE_SEC = 180
+_QUOTA_HISTORY_SEC = 6 * 3600
 
 
-def _quota_sessions(rows):
-    for row in rows if isinstance(rows, list) else ():
-        if not isinstance(row, dict):
-            continue
-        account = row.get("account")
-        window = _QUOTA_WINDOWS.get(account) if isinstance(account, str) else None
-        if window is None or row.get("window") != window:
-            continue
-        used = row.get("used")
-        if isinstance(used, (int, float)) and not isinstance(used, bool) and 0 <= used <= 100:
-            yield row
+def _quota_options():
+    try:
+        from hermes_cli.config import load_config_readonly
+        cfg = load_config_readonly()['delegation']
+        if cfg.get('backend') == 'model_map' and os.environ.get('DOTFILES_HERMES_QUOTA_ROUTING') != '0':
+            return tuple(o['name'] for o in cfg['backends']['model_map']['options']
+                         if isinstance(o, dict) and isinstance(o.get('name'), str))
+    except (ImportError, KeyError, TypeError, ValueError):
+        pass
+    return ()
 
 
-def _refresh_quota_cache(home: Path, cache: Path):
+def _positive_int(key, default):
+    try:
+        value = int(os.environ.get('DOTFILES_HERMES_QUOTA_' + key, str(default)))
+        return value if 0 < value < threading.TIMEOUT_MAX / 60 else default
+    except ValueError:
+        return default
+
+
+def _atomic_text(path, text):
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as out:
+        tmp = Path(out.name)
+        try:
+            out.write(text)
+            out.close()
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+def _quota_history(path, now):
+    samples = []
+    if path.exists():
+        with path.open(encoding='utf-8') as src:
+            for line in src:
+                try:
+                    s = json.loads(line)
+                    if (0 <= now - s['ts'] <= _QUOTA_HISTORY_SEC and s['window'] in quota.WINDOWS[s['account']]
+                            and quota.valid_used(s['used']) and quota.reset_ts(s['resets'])):
+                        samples.append(s)
+                except (ValueError, KeyError, TypeError):
+                    continue
+    return samples
+
+
+def _refresh_quota_cache(home, interval):
     try:
         import fcntl
-
+        cache = home / 'cache/quota-status-cache.json'
         cache.parent.mkdir(parents=True, exist_ok=True)
-        # gateway と CLI が別プロセスで動いても、同じキャッシュの更新は重ねない。
-        with cache.with_suffix(".lock").open("a") as lock:
+        with cache.with_suffix('.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            if cache.exists() and time.time() - cache.stat().st_mtime <= _QUOTA_TTL:
+            if cache.exists() and 0 <= time.time() - cache.stat().st_mtime < max(0, interval - 10):
                 return
-            proc = subprocess.run(
-                ["python3", str(home / "scripts" / "quota-status.py"), "--json"],
-                env={**os.environ, "HERMES_HOME": str(home)}, capture_output=True,
-                text=True, timeout=130, check=True,
-            )
-            rows = json.loads(proc.stdout)
-            if not any(_quota_sessions(rows)):
-                return
-            # フックに書きかけの JSON を読ませない。
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache.parent, delete=False) as out:
-                tmp = Path(out.name)
-                try:
-                    json.dump([row for row in rows if isinstance(row, dict) and "error" not in row], out)
-                    out.close()
-                    tmp.replace(cache)
-                finally:
-                    tmp.unlink(missing_ok=True)
-    except (OSError, subprocess.SubprocessError, ValueError, ImportError):
-        pass  # 取得失敗時も会話を妨げず、既存のキャッシュを残す。
-    finally:
-        _quota_refresh_lock.release()
+            proc = subprocess.run(['python3', str(home / 'scripts/quota-status.py'), '--json'],
+                                  env={**os.environ, 'HERMES_HOME': str(home)}, capture_output=True,
+                                  text=True, timeout=130, check=True)
+            now = time.time()
+            rows = [r for r in json.loads(proc.stdout) if isinstance(r, dict) and 'error' not in r]
+            history_path = cache.with_name('quota-history.jsonl')
+            history = _quota_history(history_path, now)
+            options = _quota_options()
+            state = quota.build_state(rows, history, now, options)
+            for account, info in state['accounts'].items():
+                history.extend(dict(ts=now, account=account, window=w['window'], used=w['used'], resets=w['resets'])
+                               for w in info['windows'])
+            _atomic_text(history_path, ''.join(json.dumps(s) + '\n' for s in history))
+            _atomic_text(cache.with_name('quota-routing-state.json'), json.dumps(state, ensure_ascii=False))
+            _atomic_text(cache, json.dumps(rows))  # 更新完了の印。別プロセスはこの mtime を見る。
+        from hermes_cli.plugin_events import broadcast_plugin_event
+        broadcast_plugin_event('dotfiles-bridge', 'quota.updated',
+                               {'updated_at': now, 'summary': state['summary']})
+    except (BlockingIOError, ImportError):
+        pass
+    except Exception as e:  # 取得・通知の失敗は会話へ返さない。
+        logger.debug('dotfiles-bridge: 残量の更新失敗: %s', type(e).__name__)
 
 
-def _notify_quota(parent_session_id=None, **_kwargs):
-    if parent_session_id:
-        return None
-    home = _hermes_home()
-    cache = home / "cache" / "quota-status-cache.json"
-    try:
-        stale = time.time() - cache.stat().st_mtime > _QUOTA_TTL
-    except OSError:
-        stale = True
-    try:
-        rows = json.loads(cache.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        rows = []
-    if stale and _quota_refresh_lock.acquire(blocking=False):
+def _quota_poll():
+    while True:
+        interval = _positive_int('INTERVAL_SEC', 180)
+        idle = _positive_int('ACTIVE_MIN', 30) * 60
+        with _quota_cond:
+            now = time.monotonic()
+            for h, (last, _) in list(_quota_schedule.items()):
+                if now - last >= idle:
+                    del _quota_schedule[h]
+            if not _quota_schedule:
+                _quota_cond.wait()  # 次の活動まで取得も定期起床もしない。
+                continue
+            home = min(_quota_schedule, key=lambda h: _quota_schedule[h][1])
+            last, due = _quota_schedule[home]
+            if due > now:
+                _quota_cond.wait(due - now)
+                continue
+            _quota_schedule[home] = (last, now + interval)
         try:
-            threading.Thread(target=_refresh_quota_cache, args=(home, cache),
-                             name="dotfiles-quota-refresh", daemon=True).start()
-        except RuntimeError:
-            _quota_refresh_lock.release()
+            # フックと違い、このスレッドには呼出元のプロファイルが束縛されていない。
+            from agent.runtime_scope import bind_profile_scope
+            with bind_profile_scope(home, hydrate_secrets=False):
+                _refresh_quota_cache(home, interval)
+        except Exception as e:
+            logger.debug('dotfiles-bridge: 残量の監視失敗: %s', type(e).__name__)
 
-    notices = []
-    for row in _quota_sessions(rows):
-        used = row["used"]
-        if used < 80:
-            continue
-        reset = None
-        timestamp = row.get("resets")
-        if isinstance(timestamp, str):
-            try:
-                reset = _dt.datetime.fromisoformat(timestamp).astimezone()
-            except (ValueError, OSError, OverflowError):
-                pass
-        if reset is not None and reset <= _dt.datetime.now().astimezone():
-            continue  # 更新待ちでも、終了した5時間枠の値では警告しない。
-        limit = f"{used:g}%（リセット {reset.strftime('%H:%M') if reset else '不明'}）"
-        if row["account"] == "claude":
-            notices.append(f"Claude の5時間枠が {limit}：自分で行うのは会話・質問への回答と"
-                           "道具を1〜2回使う確認だけとし、要約・下書きも quota-aware-routing に従って委任する。"
-                           "95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。")
-        else:
-            notices.append(f"OpenAI 側の5時間枠が {limit}。deep を避け、重要なものは claude-backup、軽いものは quick に回す。")
-    if notices:
-        return {"context": "[dotfiles-bridge・ユーザーの発言ではない自動通知] " + "\n".join(notices)}
+
+def _touch_quota(home):
+    global _quota_thread
+    with _quota_cond:
+        now = time.monotonic()
+        fresh = home not in _quota_schedule
+        due = 0 if fresh else _quota_schedule[home][1]
+        _quota_schedule[home] = (now, due)
+        if _quota_thread is None or not _quota_thread.is_alive():
+            _quota_thread = threading.Thread(target=_quota_poll, name='dotfiles-quota', daemon=True)
+            _quota_thread.start()
+        elif fresh:
+            _quota_cond.notify()
+
+
+def _top_level(parent_session_id, platform, task_id):
+    # pre_tool_call には親 ID と platform が渡らない。子の実行に割り当てる task_id でも除外する。
+    if parent_session_id or platform == 'subagent' or re.fullmatch(r'(?:sa|subagent)-\d+-[0-9a-f]{8}', str(task_id)):
+        return False
+    try:
+        from agent.delegation_context import is_delegated_child_context
+        return not is_delegated_child_context()
+    except ImportError:
+        return True
+
+
+def _read_quota_state(home, now):
+    try:
+        state = json.loads((home / 'cache/quota-routing-state.json').read_text(encoding='utf-8'))
+        if 0 <= now - state['updated_at'] <= quota.STATE_TTL_SEC:
+            # 次の測定前に枠が切れたら過去の使用率で振り替えない。
+            live = {k: [w for w in a['windows'] if quota.reset_ts(w['resets']) > now]
+                    for k, a in state['accounts'].items()}
+            if any(len(live[k]) != len(a['windows']) for k, a in state['accounts'].items()):
+                return quota.state_from_windows(live, state['updated_at'], state['mapping'])
+            return state
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     return None
+
+
+def _route_delegate(tool_name=None, args=None, session_id=None, task_id=None, parent_session_id=None,
+                    platform=None, **_kwargs):
+    try:
+        if not _top_level(parent_session_id, platform, task_id):
+            return None
+        home = _hermes_home()
+        _touch_quota(home)
+        if (tool_name != 'delegate_task' or not isinstance(args, dict) or args.get('action', 'spawn') != 'spawn'
+                or os.environ.get('DOTFILES_HERMES_QUOTA_ROUTING') == '0'):
+            return None
+        state = _read_quota_state(home, time.time())
+        if not state or not any(k != v for k, v in state['mapping'].items()):
+            return None
+        tasks = args.get('tasks')
+        if (tasks is None or tasks == []) and isinstance(args.get('goal'), str):
+            tasks = [{k: args[k] for k in ('goal', 'context', 'images', 'output_schema', 'role', 'option') if k in args}]
+        if not isinstance(tasks, list):
+            return None
+        options = _quota_options()  # 測定後にルートが削除された場合にも、無効な名前を書き込まない。
+        changes, result = [], []
+        for task in tasks:
+            old = task.get('option') if isinstance(task, dict) else None
+            if old is None:
+                old = 'standard'
+            new = state['mapping'].get(old)
+            if isinstance(task, dict) and old in options and new in options and new != old:
+                changes.append(f'{old}→{new}')
+                task = {**task, 'option': new}
+            result.append(task)
+        if not changes:
+            return None
+        try:
+            log = home / 'logs/quota-routing.log'
+            log.parent.mkdir(parents=True, exist_ok=True)
+            entry = dict(ts=_dt.datetime.now().astimezone().isoformat(), session=session_id,
+                         changes=changes, levels={k: a['level'] for k, a in state['accounts'].items()})
+            with log.open('a', encoding='utf-8') as out:
+                out.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        except OSError:
+            pass
+        return {'action': 'modify', 'args': {'tasks': result}}
+    except Exception as e:
+        logger.debug('dotfiles-bridge: 委任先を変更せず続行: %s', type(e).__name__)
+        return None
+
+
+def _notify_quota(session_id=None, parent_session_id=None, platform=None, task_id=None, **_kwargs):
+    try:
+        if not _top_level(parent_session_id, platform, task_id):
+            return None
+        home = _hermes_home()
+        _touch_quota(home)
+        now = time.time()
+        state = _read_quota_state(home, now)
+        if not state:
+            return None
+        accounts = state['accounts']
+        mapping = {} if os.environ.get('DOTFILES_HERMES_QUOTA_ROUTING') == '0' else state['mapping']
+        levels = tuple(accounts[k]['level'] for k in quota.WINDOWS)
+        signature = levels, tuple(sorted(mapping.items()))
+        key = (home, session_id)
+        with _quota_cond:
+            previous, last = _quota_announced.get(key, (None, 0))
+            if previous == signature and (not {'critical', 'high'}.intersection(levels) or now-last < _QUOTA_NOTICE_SEC):
+                return None
+            if len(_quota_announced) >= _ANNOUNCED_MAX and key not in _quota_announced:
+                del _quota_announced[next(iter(_quota_announced))]
+            _quota_announced[key] = signature, now
+        text = '[dotfiles-bridge・ユーザーの発言ではない自動通知] 残量: ' + quota.summarize(accounts, mapping)
+        if any(w['window'] == 'Current session' and w['used'] >= 80 for w in accounts['claude']['windows']):
+            text += ('。自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。'
+                     '95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。')
+        if any(k != v for k, v in mapping.items()):
+            text += ' delegate_task の option は自動で振り替えられる。'
+        if state['both_critical']:
+            resets = ' / '.join(f"{k} {w['window']}: {w['resets']}" for k, a in accounts.items() for w in a['windows'])
+            text += f' リセット時刻（{resets}）を示し、後回しにするかユーザーに尋ねる。'
+        return {'context': text}
+    except Exception as e:
+        logger.debug('dotfiles-bridge: 残量通知を見送り: %s', type(e).__name__)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -527,5 +674,6 @@ def register(ctx):
     ctx.register_hook("pre_tool_call", _guard_shared_skills)
     ctx.register_hook("pre_llm_call", _notify_proposals)
     ctx.register_hook("pre_llm_call", _notify_quota)
+    ctx.register_hook("pre_tool_call", _route_delegate)
     ctx.register_hook("pre_tool_call", _ensure_edge)
     ctx.register_hook("post_tool_call", _touch_edge)

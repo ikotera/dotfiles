@@ -8,7 +8,7 @@ adapters/hermes/
   setup.sh          # 何度実行してもよいセットアップ（下記）
   plugin/           # Hermes プラグイン dotfiles-bridge（~/.hermes/plugins/dotfiles-bridge へ symlink）
     plugin.yaml
-    __init__.py     #  1) 共通規約の注入  2) RTK 化  3) 共有スキルの保護  4) 提案の通知  5) 専用 Edge の自動起動・終了
+    __init__.py     #  1) 共通規約の注入  2) RTK 化  3) 共有スキルの保護  4) 提案の通知  5) 残量による委任先の振替  6) 専用 Edge の自動起動・終了
   SOUL.md           # Hermes の人格設定（~/.hermes/SOUL.md へ symlink）
   skills/           # Hermes の仕組みに依存するスキル（skills.external_dirs で読み込み）
     dotfiles-skill-proposals/   # 共有スキルへの変更提案を確認・反映する手順
@@ -92,7 +92,15 @@ Hermes デスクトップ内のブラウザで開くと、権限を個別に選�
 - **`skill_view` が symlink の外側を読まない**: `skills/*/references/` は `shared-references/` への相対 symlink なので「Path escapes allowed directory」になる。コピーで回避せず、`hermes-instructions.md` と各 SKILL.md に「そのときは正本を `read_file` で読む」と書いて対応した。
 - **出力整形チェックを移さない理由**: `check_formatting.py` の2つの規則（61文字以上の `$...$`、`\[...\]`）は Claude Code の描画の不具合に合わせたもの。Hermes デスクトップは前処理で `\(...\)`・`\[...\]` を KaTeX 用に変換し、`$...$` の長さ制限もない（apps/desktop の `markdown-preprocess.ts` で確認。画面での実測は未実施）。また Hermes で応答をやり直させられるフック（`pre_verify`）は、コードを編集したターンでしか発火しない。Hermes 固有の注意点（`$...$` の中の日本語は描画されない等）は `hermes-instructions.md` に書いた。
 - **RTK の書き換え**: `rtk rewrite` の終了コード 0（書き換え）と 3（書き換え・要確認）で書き換え、それ以外は元のまま。失敗・時間切れ（3秒）でも何もしない。`DOTFILES_HERMES_RTK=0` で止められる。
-- **5時間枠の警告**: Claude / OpenAI の使用率が80%以上なら、`pre_llm_call` が指揮役に毎ターン、自動通知を添える。Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。フックは `$HERMES_HOME/cache/quota-status-cache.json` を読むだけで、キャッシュがないか10分を超えて古い場合は、`setup.sh` で配置済みの `$HERMES_HOME/scripts/quota-status.py --json` をバックグラウンドで実行して更新する。フック内で同期実行するとタイムアウトの原因になるため、更新を待たない。初回は通知せず、サブエージェントには差し込まない。
+## 残量の表示と委任先の自動切替
+
+親セッションからモデルまたはツールを呼ぶと、バックグラウンドで Claude と OpenAI の5時間枠・週枠を3分ごとに観測する。最後の活動から30分たつと休止し、次の活動で再開する。取得には言語モデルを使わず、会話は取得を待たない。間隔は `DOTFILES_HERMES_QUOTA_INTERVAL_SEC`（秒）、休止までの時間は `DOTFILES_HERMES_QUOTA_ACTIVE_MIN`（分）で変えられる。
+
+Desktop の **Capabilities → Plugins** で `dotfiles-bridge` の **Desktop 側**も有効にすると、右下の `C 33% · O 92% ⚠` に両者の5時間枠の**使用率**が出る（残りではない）。チップにポインタを合わせるか選択すると、週枠・消費速度・リセット時刻・振替先も確認できる。更新イベントで再読込し、イベントが届かなくても1分ごとにキャッシュを読み直す。`?` は未取得・失効を表す。
+
+指揮役は難度で `option` を指定する。フックは両者の枠のうち厳しい判定を採り、新規の `delegate_task` だけを振り替える。たとえば OpenAI が high・Claude が ok なら `standard`（省略時を含む）と `deep` は `claude-backup`、`quick` はそのまま。両者とも critical なら `quick` に寄せ、リセットまで待つかユーザーに尋ねる。既存の委任やメインモデルは変更しない。判定基準と全組み合わせは `skills/quota-aware-routing/SKILL.md` の手順2を参照。`DOTFILES_HERMES_QUOTA_ROUTING=0` は振替だけを止める。
+
+`$HERMES_HOME/cache/quota-routing-state.json` に判定・振替表、同じ場所の `quota-status-cache.json` に使用率、`quota-history.jsonl` に直近6時間の観測値を保存する。実際の振替は `$HERMES_HOME/logs/quota-routing.log` に記録する。状態が15分を超えて古い場合、または設定に振替先がない場合は変更しない。状態変化は次の `pre_llm_call` で、high・critical が続くときも最短3分間隔で指揮役のみに知らせる。手動のスポット確認は `python3 ~/.hermes/scripts/quota-status.py`。
 
 ## プラグインを変更したとき
 

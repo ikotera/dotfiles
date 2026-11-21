@@ -1,10 +1,11 @@
 name: dotfiles-bridge
-version: 0.1.0
+version: 0.2.0
 description: >
   dotfiles（ikotera/dotfiles）を Hermes に橋渡しする薄いアダプタ。
   instructions/shared-instructions.md と instructions/hermes-instructions.md を
   セッション開始時に毎回ファイルから読み、システムプロンプトの節として注入する（中身のコピーを持たない）。
   terminal ツールのコマンドを `rtk rewrite` で RTK 版に書き換える（Claude Code の `rtk hook claude` 相当）。
+  両サブスクリプションを3分ごとに観測し、Desktop に使用率を表示して、新規委任先を残量に応じて切り替える。
 author: ikotera
 kind: standalone
 platforms:
@@ -12,6 +13,6 @@ platforms:
   - linux
 provides_tools: []
 provides_hooks:
-  - pre_tool_call
-  - pre_llm_call
+  - pre_tool_call  # 活動を記録し、spawn の option だけを必要に応じて振り替える
+  - pre_llm_call   # 残量の変化・逼迫をシステムプロンプト外で通知
   - post_tool_call

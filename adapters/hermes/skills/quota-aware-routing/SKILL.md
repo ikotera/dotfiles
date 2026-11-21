@@ -1,7 +1,7 @@
 ---
 name: quota-aware-routing
 description: Use when delegating or quota is high. Route by difficulty; escalate.
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [delegation, model-routing, quota, subscription, escalation]
@@ -40,16 +40,22 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 委任しても指揮役のターン（指示・確認）は残るため、道具を1〜2回使えば済む作業は委任するとかえって高くつく。
 
 ## 手順
-1. **残量を見る**（重い依頼の前、または前回の確認から1時間以上たっているとき）
-   `python3 ~/.hermes/scripts/quota-status.py`（AI を呼ばないので枠を使わない。数秒かかる）
-   表示の数値は**使用率**（残りではない）。`Current session 2%` は残り98%。80%の判定の前に行（claude / openai、session / week）と向きを読み違えていないか確かめる。読み違えると、余裕があるのに基準を厳しくしたり、逼迫しているのに見逃したりする。
-2. **配分を決める**
-   | 状況 | 対応 |
-   |---|---|
-   | 両方とも80%未満 | 通常どおり。実作業は OpenAI 側のルートへ |
-   | Claude の5時間枠が80%以上 | 基準を厳しくし、自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる（`/model` で切り替えると、次の1回は会話全体を読み直す） |
-   | OpenAI 側が80%以上 | `deep` を避ける。重要なものは `claude-backup`、軽いものは `quick` に回す |
-   | 両方とも95%以上 | リセット時刻を示し、後回しにするか、最小限で続けるかを尋ねる |
+1. **残量を見る**: Desktop 右下のチップ（`C` は Claude、`O` は OpenAI）に5時間枠の**使用率**が出る。残りではない。週枠・消費速度・リセット・振替はチップの詳細を見る。必要なら `python3 ~/.hermes/scripts/quota-status.py` でその場の値を確認する（AI を呼ばない）。
+2. **配分を決める**: 指揮役は難度でルートを選ぶ。`dotfiles-bridge` は親セッションの活動中に3分ごとに観測し、新規の `delegate_task` だけを次のとおり振り替える。明記のないルートは指定どおり。`option` を省略すると `standard` として扱う。
+
+   | OpenAI | Claude | 自動の振替 |
+   |---|---|---|
+   | ok / unknown | high / critical | `claude-backup` → `standard` |
+   | ok / unknown | その他 | 変更なし |
+   | warn | ok / warn / unknown | `deep` → `claude-backup` |
+   | warn | high / critical | `deep` → `standard` |
+   | high | ok / warn / unknown | `deep`・`standard` → `claude-backup` |
+   | high | high / critical | `deep` → `standard` |
+   | critical | critical 以外 | 全ルート → `claude-backup` |
+   | critical | critical | 全ルート → `quick`。リセット時刻を示し、後回しにするかユーザーに尋ねる |
+
+   5時間枠・週枠の厳しい方で判断する。warn は5時間60%・週80%・リセット時の予測85%のいずれか以上。high は順に75%・90%・予測100%以上。critical は5時間90%・週97%のいずれか以上、または枯渇まで15分未満でリセットに間に合わないとき。予測には同じリセット枠の直近15分、5分以上離れた観測値を使う。観測不足なら速度・予測は未確定。
+
    ChatGPT にリセット権が残っていても、自分では使わない（`/usage reset` はユーザーの判断に任せる）。
 3. **ルートを選んで委任する**: `delegate_task` の各タスクの `option` に上表のルート名を指定する。依頼文には、目的・受け入れ条件（何がそろえば完了か）・情報源の明記を必ず入れる。
    - 実装を任せるとき（リポジトリの変更）は、依頼文に次を入れる。サブエージェントは会話の経緯を知らないため、欠けると規約違反や作業のやり直しになる。
@@ -84,6 +90,8 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 7. **報告する**: 格上げやり直しをしたときだけ、どのルートで何回やり直したかを1行添える。
 
 ## 落とし穴
+- 使用率が高くても、終了済みの枠・15分を超えて古い状態・設定にない振替先では変更しない。`unknown` は余裕を保証しない。`DOTFILES_HERMES_QUOTA_ROUTING=0` は観測ではなく振替を止める。
+- 既に走っている子や `continue`、指揮役のモデルは切り替わらない。Claude の5時間枠が80%以上なら上記の指揮役の基準も適用する。
 - 1トークンあたりの安さではなく、合格するまでの総消費で判断する。やり直しが続くなら最初から1段上を選ぶ。
 - 依頼文の不足を格上げで補わない。枠を浪費し、計画の穴を隠すことになる。
 - バックグラウンドのサブエージェントが動いている間は `hermes gateway restart` をしない（予約もしない）。サブエージェントはゲートウェイの中で動くため、再起動で作業が途中で切れる。プラグインの変更の反映は、すべての委任が終わってから行う。
@@ -95,3 +103,4 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 ## 確認
 - `hermes delegation config --show` に4つのルートが安い順に並んでいること。
 - `python3 ~/.hermes/scripts/quota-status.py` で両方の使用率が出ること。
+- Desktop 側も有効にし、チップの値・振替先と `$HERMES_HOME/cache/quota-routing-state.json` を見比べる。実際に別ルートへ振り替えた spawn は `$HERMES_HOME/logs/quota-routing.log` に残る（依頼文は記録しない）。
