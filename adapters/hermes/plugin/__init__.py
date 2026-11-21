@@ -446,14 +446,17 @@ def _quota_poll():
             home = min(_quota_schedule, key=lambda h: _quota_schedule[h][1])
             last, due = _quota_schedule[home]
             if due > now:
-                _quota_cond.wait(due - now)
+                _quota_cond.wait(min(due - now, last + idle - now))
                 continue
             _quota_schedule[home] = (last, now + interval)
         try:
             # フックと違い、このスレッドには呼出元のプロファイルが束縛されていない。
-            from agent.runtime_scope import bind_profile_scope
-            with bind_profile_scope(home, hydrate_secrets=False):
+            if home == _hermes_home():
                 _refresh_quota_cache(home, interval)
+            else:
+                from agent.runtime_scope import bind_profile_scope
+                with bind_profile_scope(home, hydrate_secrets=False):
+                    _refresh_quota_cache(home, interval)
         except Exception as e:
             logger.debug('dotfiles-bridge: 残量の監視失敗: %s', type(e).__name__)
 

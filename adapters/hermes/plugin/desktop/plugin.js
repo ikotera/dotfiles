@@ -1,4 +1,4 @@
-import { gatewayActivationEpoch, host, useQuery, useValue } from '@hermes/plugin-sdk'
+import { host, useGatewayActivationEpoch, useQuery, useValue } from '@hermes/plugin-sdk'
 import { useEffect } from 'react'
 import { jsx } from 'react/jsx-runtime'
 
@@ -8,9 +8,9 @@ const colors = ['--ui-text-tertiary', '--ui-text-secondary', '--dt-primary', '--
 
 function QuotaChip({ ctx }) {
   const profile = useValue(host.state.profile)
-  useValue(host.state.gateway)
+  const epoch = useGatewayActivationEpoch()
   const query = useQuery({
-    queryKey: [ID, 'quota', profile, gatewayActivationEpoch()],
+    queryKey: [ID, 'quota', profile, epoch],
     queryFn: () => ctx.rest('/quota'),
     refetchInterval: 60000,
     retry: false
@@ -23,11 +23,14 @@ function QuotaChip({ ctx }) {
   const age = now - (data?.updated_at ?? 0) * 1000
   const live = !query.isError && age >= 0 && age <= 900000 && data?.accounts
   const details = []
+  let expired = false
   let severity = 0
   const text = [['claude', 'C', 'Current session'], ['openai', 'O', 'Session']].map(([key, label, session]) => {
     const account = live && data.accounts[key]
     const wins = (account?.windows ?? []).filter(w => Date.parse(w.resets) > now)
-    const level = wins.length ? account.level : 'unknown'
+    const resetSinceSample = wins.length !== (account?.windows?.length ?? 0)
+    expired ||= resetSinceSample
+    const level = wins.length && !resetSinceSample ? account.level : 'unknown'
     severity = Math.max(severity, levels.indexOf(level))
     const current = wins.find(w => w.window === session)
     for (const w of wins) {
@@ -37,7 +40,7 @@ function QuotaChip({ ctx }) {
     }
     return `${label} ${current ? `${current.used}%` : '?'}`
   }).join(' · ') + (severity >= 2 ? ' ⚠' : '')
-  const detail = live ? [data.summary, ...details,
+  const detail = live ? [expired ? 'リセット後の再判定を待っています。' : data.summary, ...details,
     `更新 ${new Date(data.updated_at * 1000).toLocaleTimeString()}`].join('\n') : '使用率は未取得、または15分以上前の観測です。'
   return jsx('button', {
     type: 'button', title: detail, 'aria-label': `クオータ使用率 ${text}。${detail}`,

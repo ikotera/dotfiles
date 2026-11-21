@@ -132,3 +132,98 @@ class HookTest(unittest.TestCase):
         self.clock.return_value += 181
         self.assertIsNone(notice())
 
+
+class PollerTest(unittest.TestCase):
+    def test_shared_lock_cache_history_and_failure(self):
+        import fcntl
+        import subprocess
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cache = home / 'cache'
+            cache.mkdir()
+            rows = [row(75), row(25, 'Current session', account='claude')]
+            history = cache / 'quota-history.jsonl'
+            history.write_text(json.dumps(dict(row(95), ts=NOW-21601)) + '\n' +
+                               json.dumps(dict(row(70), ts=NOW-600)) + '\n')
+            with patch.object(bridge.time, 'time', return_value=NOW), \
+                    patch.object(bridge, '_quota_options', return_value=OPTIONS), \
+                    patch.object(bridge.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(rows))) as fetch, \
+                    patch.dict(sys.modules, {'hermes_cli.plugin_events': None}):
+                with (cache / 'quota-status-cache.lock').open('a') as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    bridge._refresh_quota_cache(home, 180)
+                    fetch.assert_not_called()
+                bridge._refresh_quota_cache(home, 180)
+                stats = cache / 'quota-status-cache.json'
+                state = cache / 'quota-routing-state.json'
+                self.assertEqual(json.loads(stats.read_text()), rows)
+                measured = json.loads(state.read_text())['accounts']['openai']
+                self.assertEqual(measured['windows'][0]['burn_per_hour'], 30)
+                self.assertEqual(len(history.read_text().splitlines()), 3)
+                os.utime(stats, (NOW-169, NOW-169))
+                bridge._refresh_quota_cache(home, 180)
+                fetch.assert_called_once()
+                os.utime(stats, (NOW-180, NOW-180))
+                previous = state.read_bytes()
+                fetch.side_effect = subprocess.TimeoutExpired('quota-status', 130)
+                bridge._refresh_quota_cache(home, 180)
+                self.assertEqual(fetch.call_count, 2)
+                self.assertEqual(state.read_bytes(), previous)
+
+    def test_active_idle_resume(self):
+        # テスト終了時には監視ループを抜ける。実時間の3分を待たず、条件変数の待機境界を調べる。
+        from threading import Condition, Event, Thread
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            ticks, idle, stopped = Event(), Event(), Event()
+            cond = Condition()
+            real_wait = cond.wait
+            def wait(timeout=None):
+                if timeout is None:
+                    idle.set()
+                if not stopped.is_set():
+                    real_wait(timeout)
+                if stopped.is_set():
+                    raise StopIteration
+            def worker():
+                try:
+                    bridge._quota_poll()
+                except StopIteration:
+                    pass
+            fetch = Mock(side_effect=lambda *_: ticks.set())
+            with patch.dict(os.environ, DOTFILES_HERMES_QUOTA_INTERVAL_SEC='180', DOTFILES_HERMES_QUOTA_ACTIVE_MIN='30'), \
+                    patch.object(bridge, '_hermes_home', return_value=home), \
+                    patch.object(bridge, '_quota_cond', cond), patch.object(cond, 'wait', wait), \
+                    patch.object(bridge, '_quota_schedule', {}), patch.object(bridge, '_refresh_quota_cache', fetch), \
+                    patch.object(bridge.time, 'monotonic', return_value=1000) as clock:
+                t = Thread(target=worker, daemon=True)
+                with patch.object(bridge, '_quota_thread', t):
+                    t.start()
+                    try:
+                        self.assertTrue(idle.wait(1))
+                        fetch.assert_not_called()
+                        idle.clear()
+                        bridge._touch_quota(home)
+                        self.assertTrue(ticks.wait(1))
+                        ticks.clear()
+                        with cond:
+                            clock.return_value += 180
+                            cond.notify()
+                        self.assertTrue(ticks.wait(1))
+                        ticks.clear()
+                        with cond:
+                            clock.return_value += 1800
+                            cond.notify()
+                        self.assertTrue(idle.wait(1))
+                        self.assertEqual(fetch.call_count, 2)
+                        bridge._touch_quota(home)
+                        self.assertTrue(ticks.wait(1))
+                        self.assertEqual(fetch.call_count, 3)
+                    finally:
+                        with cond:
+                            stopped.set()
+                            cond.notify()
+                        t.join(1)
+                    self.assertFalse(t.is_alive())
