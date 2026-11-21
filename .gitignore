@@ -4,3 +4,5 @@
 __pycache__/
 *.pyc
 skills/synced/
+# Agent Reach（第三者のスキル。agent-reach setup/update が管理する）
+skills/agent-reach/
