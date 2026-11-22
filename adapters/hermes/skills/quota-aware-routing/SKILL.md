@@ -89,7 +89,8 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 6. **記録する**: 各試行（成功も含む）を同梱スキルの台帳に1行ずつ残す。次回以降のルートの提案に使われる。
    `--class` は決まった値だけを受け付ける（code-bugfix・code-feature・code-refactor・code-tests・config-ops・data-extraction・data-migration・data-reshape・deliverable・docs-edit・file-ops・other・research・review・summary・ui-frontend）。
    `python3 ~/.hermes/plugins/advanced-delegation/skills/model-routing/scripts/route_ledger.py add --class <上の値> --difficulty <1-5> --route <ルート> --outcome pass|fail --attempt <n> [--cause model|spec|context|env|flaky] --task "<内容>" --evidence "<確認した方法と結果>"`
-7. **報告する**: 格上げやり直しをしたときだけ、どのルートで何回やり直したかを1行添える。
+7. **報告する**: 子の報告（英語のことが多い）をそのまま貼らず、利用者の言語に直し、利用者向けの構成に書き直してから返す。格上げやり直しをしたときだけ、どのルートで何回やり直したかを1行添える。
+   - 子の作業が外部サービスの認証切れ（HTTP 401 など）で止まったら、指揮役がそのサービスのツールを1回軽く呼んでトークンを更新し、同じコマンドを自分で再実行してから報告する。
 
 ## 落とし穴
 - 使用率が高くても、終了済みの枠・15分を超えて古い状態・設定にない振替先では変更しない。`unknown` は余裕を保証しない。`DOTFILES_HERMES_QUOTA_ROUTING=0` は観測ではなく振替を止める。
