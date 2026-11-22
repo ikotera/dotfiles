@@ -13,9 +13,10 @@
 | `log` | 生の対話ログ |
 | `moc` | Map of Content（領域のハブ） |
 | `daily` | 日次記録・ジャーナル |
+| `report` | 目的に沿って通読できる論考（`06_Reports`） |
 
-## domain（concept は必須・単一 / distill・log・moc・daily は多値可）
-索引・ハブ・日次記録である distill・log・moc・daily は複数領域にまたがるため多値可。daily は該当領域がなければ空配列にする。集計単位である concept は必ず1つ。
+## domain（concept は必須・単一 / distill・log・moc・daily・report は多値可）
+索引・ハブ・日次記録・論考である distill・log・moc・daily・report は複数領域にまたがるため多値可。daily は該当領域がなければ空配列にする。集計単位である concept は必ず1つ。
 | 値 | 範囲 |
 |---|---|
 | `hardware` | コンピュータハードウェア |
@@ -126,6 +127,7 @@
 | `log` | `raw` → `processed` |
 | `moc` | `seedling` → `growing` → `evergreen` |
 | `daily` | 使用しない |
+| `report` | `draft` → `final` |
 
 ## キー定義（concept）
 `type` / `domain` / `tags` / `status` / `created` / `up` / `related` / `source` / `aliases`
@@ -153,6 +155,18 @@
 - `status` … `seedling` → `growing` → `evergreen`（育てて維持するハブ）。
 - 本文に構成要素ノードへの `[[Wikilink]]` を群ごとに整理して並べる（ハブとしての主目的）。
 - distill と MOC は併用し軸が異なる（distill＝セッション軸の出自記録／MOC＝トピック軸の恒久ハブ／atomic note は両者が指す概念の単一の真実源）。詳細は `distill-atomic-workflow.md` と `moc-workflow.md`。
+
+## キー定義（report）
+`type` / `date` / `ai` / `domain`（多値可）/ `tags` / `status` / `sources` / `related` / `moc` / `aliases`
+
+- 目的に沿って通読できる論考。保存先は `06_Reports`、テンプレートは `report-template.md`、手順は `report-workflow.md`。
+- `date` … 作成日（`YYYY-MM-DD`）。
+- `ai` … 作成したエージェント（単一）。値は distill の `ai` と同じ集合。
+- `status` … `draft` → `final`。参考情報の確認と検証（`report-workflow.md` Phase 7）を終えたら `final`。
+- `sources` … 出自（会話URL・`[[distill]]`・外部URL、多値）。
+- `related` … 関係の深いノート（`[[distill]]`・`[[MOC]]`・`[[atomic note]]`、多値・任意）。
+- `moc` … 統合先のトピックハブ `[[topic MOC]]`（単一・任意。MOC 未作成なら省略）。
+- `updated` は使わない。本文末の「改訂履歴」表と git が変更履歴を持つ。
 
 ## キー定義（daily）
 `type` / `date` / `domain`（多値可・該当なしは空配列）/ `tags` / `linked` / `journal`（任意）

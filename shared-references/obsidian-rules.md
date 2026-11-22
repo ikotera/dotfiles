@@ -11,6 +11,7 @@
 - atomic note：`03_Atomic-notes`
 - daily note：`04_Daily-notes`
 - manual：`05_Manuals`
+- report：`06_Reports`
 
 ## ビジュアル・動的な成果物の保存
 
