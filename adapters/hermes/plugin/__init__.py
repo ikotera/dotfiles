@@ -501,6 +501,11 @@ def _read_quota_state(home, now):
     return None
 
 
+JA_MARK = '【報告の言語】'
+JA_NOTE = ('【報告の言語】最終報告・途中の説明・作成する文書は、必ず日本語で書く（コード・コマンド・識別子・引用する原文はそのままでよい）。'
+           '英語の資料を読んだ場合も、報告は日本語に直して書く。')
+
+
 def _route_delegate(tool_name=None, args=None, session_id=None, task_id=None, parent_session_id=None,
                     platform=None, **_kwargs):
     try:
@@ -508,30 +513,35 @@ def _route_delegate(tool_name=None, args=None, session_id=None, task_id=None, pa
             return None
         home = _hermes_home()
         _touch_quota(home)
-        if (tool_name != 'delegate_task' or not isinstance(args, dict) or args.get('action', 'spawn') != 'spawn'
-                or os.environ.get('DOTFILES_HERMES_QUOTA_ROUTING') == '0'):
+        if tool_name != 'delegate_task' or not isinstance(args, dict) or args.get('action', 'spawn') != 'spawn':
             return None
-        state = _read_quota_state(home, time.time())
-        if not state or not any(k != v for k, v in state['mapping'].items()):
-            return None
+        state = None if os.environ.get('DOTFILES_HERMES_QUOTA_ROUTING') == '0' else _read_quota_state(home, time.time())
+        routing = bool(state) and any(k != v for k, v in state['mapping'].items())
         tasks = args.get('tasks')
         if (tasks is None or tasks == []) and isinstance(args.get('goal'), str):
             tasks = [{k: args[k] for k in ('goal', 'context', 'images', 'output_schema', 'role', 'option') if k in args}]
         if not isinstance(tasks, list):
             return None
-        options = _quota_options()  # 測定後にルートが削除された場合にも、無効な名前を書き込まない。
-        changes, result = [], []
+        options = _quota_options() if routing else set()  # 測定後にルートが削除された場合にも、無効な名前を書き込まない。
+        changes, result, lang_added = [], [], False
         for task in tasks:
+            if isinstance(task, dict) and JA_MARK not in str(task.get('context') or ''):
+                # 子は親の会話も共有規約も見ないため、報告の言語を依頼文に必ず書き足す。
+                ctx_text = str(task.get('context') or '').rstrip()
+                task = {**task, 'context': (ctx_text + '\n\n' if ctx_text else '') + JA_NOTE}
+                lang_added = True
             old = task.get('option') if isinstance(task, dict) else None
             if old is None:
                 old = 'standard'
-            new = state['mapping'].get(old)
+            new = state['mapping'].get(old) if routing else None
             if isinstance(task, dict) and old in options and new in options and new != old:
                 changes.append(f'{old}→{new}')
                 task = {**task, 'option': new}
             result.append(task)
-        if not changes:
+        if not changes and not lang_added:
             return None
+        if not changes:
+            return {'action': 'modify', 'args': {'tasks': result}}
         try:
             log = home / 'logs/quota-routing.log'
             log.parent.mkdir(parents=True, exist_ok=True)

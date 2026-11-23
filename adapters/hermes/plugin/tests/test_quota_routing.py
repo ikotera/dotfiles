@@ -89,7 +89,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual([t['option'] for t in result['args']['tasks']], ['claude-backup','claude-backup','quick'])
         self.assertNotIn('option', tasks[0])
         self.assertEqual(self.route({'goal':'a','context':'b'})['args']['tasks'],
-                         [{'goal':'a','context':'b','option':'claude-backup'}])
+                         [{'goal':'a','context':'b\n\n' + bridge.JA_NOTE,'option':'claude-backup'}])
         self.assertIn('standard→claude-backup', (self.home / 'logs/quota-routing.log').read_text())
 
     def test_no_rewrite(self):
@@ -98,12 +98,21 @@ class HookTest(unittest.TestCase):
             self.assertIsNone(self.route(dict(args, action=action)))
         self.assertIsNone(self.route(args, task_id='sa-0-f00dbabe'))
         self.assertIsNone(self.route(args, parent_session_id='parent'))
+        only_lang = [{'goal':'a','context':bridge.JA_NOTE}]
         with patch.object(bridge, '_quota_options', return_value=['quick','standard']):
-            self.assertIsNone(self.route(args))
+            self.assertEqual(self.route(args)['args']['tasks'], only_lang)
         with patch.dict(os.environ, DOTFILES_HERMES_QUOTA_ROUTING='0'):
-            self.assertIsNone(self.route(args))
+            self.assertEqual(self.route(args)['args']['tasks'], only_lang)
         self.clock.return_value = NOW + 901
-        self.assertIsNone(self.route(args))
+        self.assertEqual(self.route(args)['args']['tasks'], only_lang)
+        # 既に言語の指定がある依頼は二重に足さず、振替もなければ書き換えない。
+        self.assertIsNone(self.route({'goal':'a','context':bridge.JA_NOTE}))
+
+    def test_japanese_note_added_once(self):
+        tasks = [{'goal':'a','context':'x'}, {'goal':'b','context':'y\n\n' + bridge.JA_NOTE, 'option':'quick'}]
+        out = self.route({'tasks': tasks})['args']['tasks']
+        self.assertTrue(all(o['context'].count(bridge.JA_MARK) == 1 for o in out))
+        self.assertEqual(tasks[0]['context'], 'x')
 
     def test_reset_between_polls_keeps_weekly_pressure(self):
         rows = [row(99, reset=NOW+30), row(93, 'Weekly')]
