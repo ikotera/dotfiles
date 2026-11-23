@@ -69,7 +69,7 @@ flowchart TD
 - レポートで説明しきれない導出・背景は atomic note 側に寄せ、レポートの本文は目的に沿った筋に集中させる。
 
 ### Phase 5' — 図表を作成する
-- SVG は自己完結（外部 CDN なし）・`width="100%"`・`viewBox` 指定・`<title>` と `<desc>` 付き・`prefers-color-scheme: dark` で文字色を切り替える形にする。既存の `11_Images/*.svg` の書式に合わせる。
+- SVG は自己完結（外部 CDN なし）・`width="100%"`・`viewBox` 指定・`<title>` と `<desc>` 付き・`prefers-color-scheme: dark` で文字色を切り替える形にする。既存の `11_Images/*.svg` の書式に合わせる。Obsidian は SVG を `<img>` で埋め込むため、`width="100%"` だけでは固有の幅が決まらず小さく表示される。vault の CSS スニペット `svg-full-width`（`.obsidian/snippets/`）が本文の幅いっぱいに広げるので、図側で px の幅を固定しない。小さく見せたい図だけ `![[名前.svg|400]]` で幅を指定する。
 - 数値のグラフは、式や乱数シードを固定したスクリプトで生成し、スクリプトは vault の外（scratch）に置く。
 - ブラウザで開いて撮影し、文字の重なり・はみ出し・曲線の誤りがないか目で確かめる。
 
