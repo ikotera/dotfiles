@@ -581,7 +581,8 @@ def _notify_quota(session_id=None, parent_session_id=None, platform=None, task_i
             _quota_announced[key] = signature, now
         text = '[dotfiles-bridge・ユーザーの発言ではない自動通知] 残量: ' + quota.summarize(accounts, mapping)
         if any(w['window'] == 'Current session' and w['used'] >= 80 for w in accounts['claude']['windows']):
-            text += ('。自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。'
+            text += ('。Claude の枠が逼迫している。重い作業はサブエージェント（新規の委任は自動で openai-backup へ回る）に任せ、'
+                     '自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけにする。'
                      '95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。')
         if any(k != v for k, v in mapping.items()):
             text += ' delegate_task の option は自動で振り替えられる。'

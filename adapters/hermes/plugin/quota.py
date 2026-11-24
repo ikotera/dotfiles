@@ -2,7 +2,8 @@
 from datetime import datetime
 
 WINDOWS = {"claude": ("Current session", "Current week"), "openai": ("Session", "Weekly")}
-OPTIONS = ("quick", "standard", "deep", "claude-backup")
+OPTIONS = ("quick", "standard", "deep", "openai-backup")
+BACKUP = "openai-backup"  # Claude の枠が逼迫したときだけ使う OpenAI 側のルート
 LEVELS = ("unknown", "ok", "warn", "high", "critical")
 USAGE_THRESHOLDS = ((60, 75, 90), (80, 90, 97))
 PROJECT_WARN, PROJECT_HIGH = 85, 100
@@ -54,19 +55,20 @@ def window_level(w, weekly):
 
 
 def routing(openai, claude, options=OPTIONS):
+    """Claude を優先する。OpenAI（BACKUP）へ回すのは Claude の枠が high / critical のときだけ。"""
     both = openai == claude == 'critical'
-    busy = claude in ('high', 'critical')
+    busy = openai in ('high', 'critical')  # 予備の OpenAI 側にも余裕がない
     mapping = {name: name for name in options}
     for name in mapping:
         target = name
-        if openai == 'critical':
-            target = 'quick' if both else 'claude-backup'
-        elif openai in ('warn', 'high') and name == 'deep':
-            target = 'standard' if busy else 'claude-backup'
-        elif openai == 'high' and name == 'standard' and not busy:
-            target = 'claude-backup'
-        elif openai in ('ok', 'unknown') and name == 'claude-backup' and busy:
-            target = 'standard'
+        if claude == 'critical':
+            target = 'quick' if both else BACKUP
+        elif claude == 'high' and name in ('deep', 'standard'):
+            target = 'standard' if busy else BACKUP
+        elif claude == 'warn' and name == 'deep':
+            target = 'standard'  # 早めに Claude の中で軽いモデルへ下げ、OpenAI には回さない
+        elif claude in ('ok', 'unknown', 'warn') and name == BACKUP:
+            target = 'standard'  # Claude に余裕があれば OpenAI は使わない
         if target in mapping:
             mapping[name] = target
     return mapping, both

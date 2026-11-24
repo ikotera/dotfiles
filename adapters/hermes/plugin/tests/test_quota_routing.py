@@ -16,7 +16,7 @@ bridge = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = bridge
 spec.loader.exec_module(bridge)
 NOW = 1800000000
-OPTIONS = ("quick", "standard", "deep", "claude-backup")
+OPTIONS = ("quick", "standard", "deep", "openai-backup")
 
 
 def row(used, window="Session", reset: float = NOW + 3600, account="openai"):
@@ -50,16 +50,16 @@ class AnalysisTest(unittest.TestCase):
             self.assertEqual((a["windows"][0]["burn_per_hour"], a["level"]), (burn, level))
 
     def test_policy(self):
-        q, s, d, c = OPTIONS
+        q, s, d, b = OPTIONS
         for o in bridge.quota.LEVELS:
             for cl in bridge.quota.LEVELS:
-                busy = cl in ("high", "critical")
-                expected = {"ok": (q,s,d,s if busy else c), "unknown": (q,s,d,s if busy else c),
-                            "warn": (q,s,s if busy else c,c), "high": (q,s if busy else c,s if busy else c,c),
-                            "critical": (q,)*4 if cl == "critical" else (c,)*4}[o]
+                busy = o in ("high", "critical")
+                expected = {"ok": (q,s,d,s), "unknown": (q,s,d,s), "warn": (q,s,s,s),
+                            "high": (q,s,s,b) if busy else (q,b,b,b),
+                            "critical": (q,)*4 if o == "critical" else (b,)*4}[cl]
                 m, both = bridge.quota.routing(o, cl)
                 self.assertEqual((tuple(m[k] for k in OPTIONS), both), (expected, o == cl == "critical"))
-        self.assertEqual(bridge.quota.routing("high", "ok", (s,d))[0], {s:s, d:d})
+        self.assertEqual(bridge.quota.routing("ok", "high", (s,d))[0], {s:s, d:d})
 
 
 class HookTest(unittest.TestCase):
@@ -74,8 +74,8 @@ class HookTest(unittest.TestCase):
         self.enterContext(patch.dict(os.environ, DOTFILES_HERMES_QUOTA_ROUTING='1'))
         self.save(80)
 
-    def save(self, used, claude=0, now=NOW):
-        state = bridge.quota.build_state([row(used), row(claude, 'Current session', account='claude')], [], now)
+    def save(self, claude, openai=0, now=NOW):
+        state = bridge.quota.build_state([row(openai), row(claude, 'Current session', account='claude')], [], now)
         path = self.home / 'cache/quota-routing-state.json'
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(state))
@@ -86,11 +86,11 @@ class HookTest(unittest.TestCase):
     def test_batch_and_single(self):
         tasks = [{"goal":"a"}, {"goal":"b", "option":"deep"}, {"goal":"c", "option":"quick"}]
         result = self.route({'tasks': tasks})
-        self.assertEqual([t['option'] for t in result['args']['tasks']], ['claude-backup','claude-backup','quick'])
+        self.assertEqual([t['option'] for t in result['args']['tasks']], ['openai-backup','openai-backup','quick'])
         self.assertNotIn('option', tasks[0])
         self.assertEqual(self.route({'goal':'a','context':'b'})['args']['tasks'],
-                         [{'goal':'a','context':'b\n\n' + bridge.JA_NOTE,'option':'claude-backup'}])
-        self.assertIn('standard→claude-backup', (self.home / 'logs/quota-routing.log').read_text())
+                         [{'goal':'a','context':'b\n\n' + bridge.JA_NOTE,'option':'openai-backup'}])
+        self.assertIn('standard→openai-backup', (self.home / 'logs/quota-routing.log').read_text())
 
     def test_no_rewrite(self):
         args = {'goal':'a'}
@@ -115,12 +115,12 @@ class HookTest(unittest.TestCase):
         self.assertEqual(tasks[0]['context'], 'x')
 
     def test_reset_between_polls_keeps_weekly_pressure(self):
-        rows = [row(99, reset=NOW+30), row(93, 'Weekly')]
+        rows = [row(99, 'Current session', NOW+30, 'claude'), row(93, 'Current week', account='claude')]
         state = bridge.quota.build_state(rows, [], NOW)
         (self.home / 'cache/quota-routing-state.json').write_text(json.dumps(state))
         self.clock.return_value += 31
         result = self.route({'tasks':[{'goal':'a'}, {'goal':'b','option':'quick'}]})
-        self.assertEqual([t['option'] for t in result['args']['tasks']], ['claude-backup', 'quick'])
+        self.assertEqual([t['option'] for t in result['args']['tasks']], ['openai-backup', 'quick'])
 
     def test_notices(self):
         def notice(key='a'):

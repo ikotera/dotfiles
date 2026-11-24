@@ -1,7 +1,7 @@
 ---
 name: quota-aware-routing
 description: Use when delegating or quota is high. Route by difficulty; escalate.
-version: 1.1.0
+version: 2.0.0
 metadata:
   hermes:
     tags: [delegation, model-routing, quota, subscription, escalation]
@@ -10,7 +10,7 @@ metadata:
 
 # Quota-aware routing（Claude と ChatGPT の両サブスクリプションの使い分け）
 
-Hermes の指揮は Claude Opus（Claude Pro の枠）が担い、実作業はサブエージェントに任せる。サブエージェントは原則 OpenAI 側（ChatGPT Plus の枠）で動かし、どちらか一方の5時間枠・週枠だけが減らないようにする。設定の正本は `adapters/hermes/scripts/apply-model-routing.sh`、残量の確認は `adapters/hermes/scripts/quota-status.py`。
+Hermes の指揮は Claude Opus（Claude Max の枠）が担い、実作業はサブエージェントに任せる。サブエージェントも Claude 側のルートを優先する。OpenAI 側（ChatGPT Plus の枠）は、Claude の残り枠が少なくなった緊急時の予備（`openai-backup`）としてだけ使う。設定の正本は `adapters/hermes/scripts/apply-model-routing.sh`、残量の確認は `adapters/hermes/scripts/quota-status.py`。
 
 ## いつ使うか
 - `delegate_task` を使うとき（毎回）。
@@ -22,20 +22,20 @@ Hermes の指揮は Claude Opus（Claude Pro の枠）が担い、実作業は�
 ## ルート（安い順。config の順序が格上げのはしごになる）
 | ルート | モデル・エフォート | 枠 | 向く作業 |
 |---|---|---|---|
-| `quick` | gpt-6-luna・low | OpenAI | 検索・抽出・短い要約・整形 |
-| `standard`（既定） | gpt-6.2-sol・medium | OpenAI | 通常の調査・下書き・複数の手順を踏む作業 |
-| `deep` | gpt-6.2-astra・high | OpenAI（減りが速い） | 難しい分析・設計・食い違う情報源・レビュー |
-| `claude-backup` | Claude Sonnet 5.5・medium | Claude | OpenAI 側の逼迫時・OpenAI 側で2回失敗したとき |
+| `quick` | Claude Haiku 5.5・low | Claude | 検索・抽出・短い要約・整形 |
+| `standard`（既定） | Claude Sonnet 5.5・medium | Claude | 通常の調査・下書き・複数の手順を踏む作業・定型のコード |
+| `deep` | Claude Opus 5.5・high | Claude（減りが速い） | 難しい分析・設計・食い違う情報源・レビュー |
+| `openai-backup` | gpt-6.2-sol・medium | OpenAI | 緊急時のみ。Claude の枠が逼迫したとき（自動で振り替わる）か、Claude 側で2回失敗したとき |
 
 ## 自分で行うか委任するか
 
 | 依頼の型 | 担当 |
 |---|---|
 | 会話・質問への回答・道具を1〜2回使う確認 | 自分（指揮役） |
-| 道具を3回以上使う見込みの作業、ファイルの変更、調査、テストの作成 | サブエージェント（OpenAI 側のルート） |
+| 道具を3回以上使う見込みの作業、ファイルの変更、調査、テストの作成 | サブエージェント（Claude 側のルート） |
 | ユーザーとのやり取りが要る作業 | 自分。ただし手を動かす部分だけ切り出して委任する |
 
-Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する。95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。
+Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うのは会話・質問への回答と道具を1〜2回使う確認だけとし、要約・下書きも委任する（このとき新規の委任は自動で OpenAI 側の `openai-backup` へ回る）。95%を超えそうなら、ユーザーにメインモデルを OpenAI 側へ切り替えるか尋ねる。
 
 委任しても指揮役のターン（指示・確認）は残るため、道具を1〜2回使えば済む作業は委任するとかえって高くつく。
 
@@ -43,15 +43,13 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 1. **残量を見る**: Desktop 右下のチップ（`C` は Claude、`O` は OpenAI）に5時間枠の**使用率**が出る。残りではない。週枠・消費速度・リセット・振替はチップの詳細を見る。必要なら `python3 ~/.hermes/scripts/quota-status.py` でその場の値を確認する（AI を呼ばない）。
 2. **配分を決める**: 指揮役は難度でルートを選ぶ。`dotfiles-bridge` は親セッションの活動中に3分ごとに観測し、新規の `delegate_task` だけを次のとおり振り替える。明記のないルートは指定どおり。`option` を省略すると `standard` として扱う。
 
-   | OpenAI | Claude | 自動の振替 |
+   | Claude | OpenAI | 自動の振替 |
    |---|---|---|
-   | ok / unknown | high / critical | `claude-backup` → `standard` |
-   | ok / unknown | その他 | 変更なし |
-   | warn | ok / warn / unknown | `deep` → `claude-backup` |
-   | warn | high / critical | `deep` → `standard` |
-   | high | ok / warn / unknown | `deep`・`standard` → `claude-backup` |
+   | ok / unknown | 問わない | `openai-backup` → `standard`（Claude に余裕があれば OpenAI は使わない） |
+   | warn | 問わない | `deep` → `standard`、`openai-backup` → `standard`（Claude の中で軽いモデルへ下げる） |
+   | high | ok / warn / unknown | `deep`・`standard` → `openai-backup` |
    | high | high / critical | `deep` → `standard` |
-   | critical | critical 以外 | 全ルート → `claude-backup` |
+   | critical | critical 以外 | 全ルート → `openai-backup` |
    | critical | critical | 全ルート → `quick`。リセット時刻を示し、後回しにするかユーザーに尋ねる |
 
    5時間枠・週枠の厳しい方で判断する。warn は5時間60%・週80%・リセット時の予測85%のいずれか以上。high は順に75%・90%・予測100%以上。critical は5時間90%・週97%のいずれか以上、または枯渇まで15分未満でリセットに間に合わないとき。予測には同じリセット枠の直近15分、5分以上離れた観測値を使う。観測不足なら速度・予測は未確定。
@@ -65,7 +63,7 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
      - 完了の手順（計画の更新・版の更新・commit・push）と、コミットしてはいけないファイル。
      - 禁止事項（`hermes gateway restart`、`~/.hermes/config.yaml` の変更、実データ・実キャッシュの書き換え）。
      - 報告の形（コミットのハッシュ、変更したファイル、確かめられなかったこと）と、報告の言語（利用者の言語。例: 「報告は必ず日本語で」）。書かないと子は英語で返し、指揮役の翻訳の手間と枠が増える。
-   - 利用者が「枠を使い切るまで続けて」と不在中の長い探索を任せたときは、各回の結果を受けるたびに計画への記録だけ済ませて次の回を出し、短い状況報告でターンを終える。OpenAI 側が上限に達している間は自動で `claude-backup` に振り替わるので、リセット時刻を見て、重い回はリセット後に回す。
+   - 利用者が「枠を使い切るまで続けて」と不在中の長い探索を任せたときは、各回の結果を受けるたびに計画への記録だけ済ませて次の回を出し、短い状況報告でターンを終える。Claude 側が逼迫している間は自動で `openai-backup` に振り替わる。OpenAI 側の枠は小さいので、リセット時刻を見て、重い回は Claude のリセット後に回す。
    - ユーザーとのやり取り（要望の転記、方針の判断）は自分で済ませ、手を動かす部分だけを渡す。
    - 独立した作業は、別々のサブエージェントに並行して任せてよい。ただし、同じファイルを触る作業は順に任せる。
    - 子の作業中に指揮役が計画のファイル（PLAN.md 等）を直すときは、`git status` で子がまだそのファイルに触れていないことを確かめ、そのファイルだけを commit・push する。続けて `steer` で「commit の前に `git pull --rebase origin main` し、指揮役の変更を残す」と伝える。伝えないと、子の commit が指揮役の変更を上書きするか、push が拒まれる。
@@ -86,7 +84,7 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
    | 少しの抜けだけ | `delegate_task(action='continue')` で同じサブエージェントに追加の指示を出す |
    | 浅い・誤り・推論の失敗（モデルの力不足） | **1段上のルート**で再委任する。前回の回答の要点と、何が不十分だったかを依頼文に入れる（最初からやり直させない） |
    | ネットワーク・ツール・一時的なエラー | 同じルートで1回だけやり直す |
-   `deep` でも不合格なら `claude-backup` で再委任するか、手順2で自分で行える範囲なら自分で仕上げる。重要度が高いのに解決しないときは、未解決であることを明示してユーザーに報告する。
+   `deep` でも不合格なら `openai-backup` で再委任する（別系統のモデルで見直す）か、手順2で自分で行える範囲なら自分で仕上げる。重要度が高いのに解決しないときは、未解決であることを明示してユーザーに報告する。
 6. **記録する**: 各試行（成功も含む）を同梱スキルの台帳に1行ずつ残す。次回以降のルートの提案に使われる。
    `--class` は決まった値だけを受け付ける（code-bugfix・code-feature・code-refactor・code-tests・config-ops・data-extraction・data-migration・data-reshape・deliverable・docs-edit・file-ops・other・research・review・summary・ui-frontend）。
    `python3 ~/.hermes/plugins/advanced-delegation/skills/model-routing/scripts/route_ledger.py add --class <上の値> --difficulty <1-5> --route <ルート> --outcome pass|fail --attempt <n> [--cause model|spec|context|env|flaky] --task "<内容>" --evidence "<確認した方法と結果>"`
@@ -100,6 +98,8 @@ Claude の5時間枠が80%以上なら基準を厳しくし、自分で行うの
 - 依頼文の不足を格上げで補わない。枠を浪費し、計画の穴を隠すことになる。
 - バックグラウンドのサブエージェントが動いている間は `hermes gateway restart` をしない（予約もしない）。サブエージェントはゲートウェイの中で動くため、再起動で作業が途中で切れる。プラグインの変更の反映は、すべての委任が終わってから行う。
 - ルートや予備の接続先の変更は新しいセッションから反映される。変更後は `route_ledger.py sync-routes` を実行する。
+- 台帳（`route_ledger.py`）は config の順序をそのまま格上げのはしごとみなすため、難度4〜5で `openai-backup` を提案することがある。緊急時用なので採らず、`deep` を使う。
+- 補助処理（タイトル生成・圧縮・承認判定）は軽さと応答の速さを優先して OpenAI の gpt-6-luna のまま。消費は小さい。
 - Claude 側の上限で予備の接続先（gpt-6.2-sol）へ自動で切り替わるかは未検証。追加利用の設定が理由でプラグインが自分で止めた場合は、切り替わらない。
 - 追加利用（extra usage）はオフのままにする。オンにすると、Opus の長文対応版などで請求が発生しうる。
 - モデル名・上限・料金は頻繁に変わる。週次の確認ジョブ「subscription-review」が変更案を出す。反映はユーザーの承認後に、設定スクリプトを直して再実行する形で行う。

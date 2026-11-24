@@ -98,7 +98,7 @@ Hermes デスクトップ内のブラウザで開くと、権限を個別に選�
 
 Desktop の **Capabilities → Plugins** で `dotfiles-bridge` の **Desktop 側**も有効にすると、右下の `C 33% · O 92% ⚠` に両者の5時間枠の**使用率**が出る（残りではない）。チップにポインタを合わせるか選択すると、週枠・消費速度・リセット時刻・振替先も確認できる。更新イベントで再読込し、イベントが届かなくても1分ごとにキャッシュを読み直す。`?` は未取得・失効を表す。
 
-指揮役は難度で `option` を指定する。フックは両者の枠のうち厳しい判定を採り、新規の `delegate_task` だけを振り替える。たとえば OpenAI が high・Claude が ok なら `standard`（省略時を含む）と `deep` は `claude-backup`、`quick` はそのまま。両者とも critical なら `quick` に寄せ、リセットまで待つかユーザーに尋ねる。既存の委任やメインモデルは変更しない。判定基準と全組み合わせは `skills/quota-aware-routing/SKILL.md` の手順2を参照。`DOTFILES_HERMES_QUOTA_ROUTING=0` は振替だけを止める。
+指揮役は難度で `option` を指定する。サブエージェントは Claude 側のルート（quick=Haiku・standard=Sonnet・deep=Opus）を優先し、OpenAI は緊急時の予備 `openai-backup` だけ使う。フックは新規の `delegate_task` だけを振り替える。Claude に余裕があれば `openai-backup` も `standard` に戻し、Claude が warn なら `deep` を `standard` に下げ、high なら `standard`（省略時を含む）と `deep` を `openai-backup` へ回す（`quick` はそのまま）。両者とも critical なら `quick` に寄せ、リセットまで待つかユーザーに尋ねる。既存の委任やメインモデルは変更しない。判定基準と全組み合わせは `skills/quota-aware-routing/SKILL.md` の手順2を参照。`DOTFILES_HERMES_QUOTA_ROUTING=0` は振替だけを止める。
 
 `$HERMES_HOME/cache/quota-routing-state.json` に判定・振替表、同じ場所の `quota-status-cache.json` に使用率、`quota-history.jsonl` に直近6時間の観測値を保存する。実際の振替は `$HERMES_HOME/logs/quota-routing.log` に記録する。状態が15分を超えて古い場合、または設定に振替先がない場合は変更しない。状態変化は次の `pre_llm_call` で、high・critical が続くときも最短3分間隔で指揮役のみに知らせる。手動のスポット確認は `python3 ~/.hermes/scripts/quota-status.py`。
 
