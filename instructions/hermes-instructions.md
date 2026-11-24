@@ -18,6 +18,9 @@
 - dotfiles は公開リポジトリのため、MEMORY.md・USER.md（`~/.hermes/memories/`）の内容を dotfiles に書かない。
 - 長く残す知見は knowledge-base（Obsidian の vault、`OBSIDIAN_VAULT_PATH`）に atomic note・distill として残す。メモリーには参照先だけを置く。
 
+## メール・チャットの返信下書き（必ず守る）
+- 返信欄に入れる下書きは、誤ってそのまま送信されても問題ない返信本文だけにする。区切り線・見出し（`----- Agent Draft -----` 等）・注記・確認事項・プレースホルダ・利用者への質問は入れず、チャットの回答に書く。下書きを直すときは、前の下書きと重ならないか確かめる。詳しくはスキル `pa-mail-draft`。
+
 ## コマンド実行
 - terminal のコマンドは dotfiles-bridge プラグインが `rtk rewrite` で自動的に RTK 版へ書き換える。`rtk` を手で付ける必要はない。
 
