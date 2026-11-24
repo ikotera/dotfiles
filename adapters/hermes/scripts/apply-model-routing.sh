@@ -6,7 +6,8 @@
 #   - サブエージェント: advanced-delegation の model_map。Claude 側のルート（Haiku / Sonnet / Opus）を優先する。
 #     OpenAI（ChatGPT Plus の枠）は Claude の枠が逼迫したときの予備 openai-backup だけ。
 #     逼迫時の振り替えは dotfiles-bridge が delegate_task の直前に自動で行う
-#   - 裏方処理（タイトル・圧縮・承認判定）: 応答の速さを優先して gpt-6-luna（消費は小さい）
+#   - 裏方処理: タイトル・承認判定は Claude Haiku、圧縮は要約の質を優先して Claude Sonnet。
+#     gpt-6-luna と速さに差がなかった（2026-11-24 実測、いずれも 3〜6 秒）ため、枠に余裕のある Claude に寄せる
 #   - 片方が上限に達したとき: もう片方へ fallback
 # モデル名は変わりやすい。週次の確認ジョブ（cron）が変更案を出し、承認後にこのファイルを直して再実行する。
 set -euo pipefail
@@ -54,10 +55,10 @@ hermes config set delegation.backends.model_map "$(cat <<JSON
 JSON
 )"
 
-# 裏方処理は OpenAI の軽量モデルへ
-for t in title_generation compression approval; do
-  hermes config set "auxiliary.$t.provider" "$CODEX"
-  hermes config set "auxiliary.$t.model" gpt-6-luna
+# 裏方処理も Claude へ
+for t in title_generation:claude-haiku-5-5 approval:claude-haiku-5-5 compression:claude-sonnet-5-5; do
+  hermes config set "auxiliary.${t%%:*}.provider" "$CLAUDE"
+  hermes config set "auxiliary.${t%%:*}.model" "${t#*:}"
 done
 
 echo "モデルの使い分け設定を適用しました（新しいセッションから反映）。"
