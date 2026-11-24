@@ -38,7 +38,7 @@ file-classifier（Rust＋GPUI 製のファイラー）の進め方を一般化�
 | ファイル | 内容 |
 |---|---|
 | `principles.md` | 省資源・心地よさ・堅牢性・技術選定・見た目・版・知識の循環の原則と、それぞれの確かめ方 |
-| `workflow.md` | 立ち上げ、1回分の開発（要望 → ステップ → 実装 → 確認 → 版 → push → 報告）、knowledge-base の使い方、distill の時機 |
+| `workflow.md` | 立ち上げ、1回分の開発（要望 → ステップ → 実装 → 確認 → 版 → push → 入れ替え → 報告）、knowledge-base の使い方、distill の時機 |
 | `versioning.md` | ステップ単位の SemVer、メイン画面への版の表示、`bump_version.sh` |
 | `stack-selection.md` | Rust コア＋フロントエンド（SwiftUI・GPUI・Tauri 等）の選び方、ワークスペースの決まりごと |
 | `macos-look-and-feel.md` | 参照アプリ（Finder 等）に合わせるためのチェック項目 |

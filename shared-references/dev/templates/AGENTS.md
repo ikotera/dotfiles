@@ -16,6 +16,7 @@ AI エージェント（Claude Code・Codex・Gemini）向けの入口。詳細�
 - 見た目と操作感は参照アプリ（PLAN 冒頭）に合わせる。
 - ステップを完了するたびに版を上げ（`scripts/bump_version.sh minor|patch|major`）、報告の先頭に `版: vX → vY` と書く。メインの画面に版を常に表示する。
 - PLAN.md を更新してから commit し、`git push origin main --follow-tags` する。push 先のリポジトリとブランチを報告する。
+- 実装の依頼では、push の後に、下の手順で利用者が使う場所（macOS アプリは `/Applications`）の古い版を置き換えるまで行う（利用者が不要と言ったときを除く）。
 - 他のプロジェクトにも役立つ気づきは PLAN §12 に1行書き、たまったら knowledge-base へ distill する。
 
 ## コマンド
