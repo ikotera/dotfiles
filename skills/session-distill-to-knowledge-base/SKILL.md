@@ -25,6 +25,8 @@ description: Codex/AI セッションを要約・distill 化・保存し、knowl
 「このセッションをdistillしてください」のような一般的な依頼では、確認待ちを挟まず 1〜9 を一気通貫で実行する。ユーザーが依頼時に対象概念やスコープを明示した場合は、その範囲に限定する。
 
 1. 出自となるセッション／会話内容を特定する。distill のファイル名にするセッションのタイトルは、実行環境が付けたタイトルを使い（例: Hermes ならセッション一覧の `title`）、自分で考えた要約タイトルを付けない。
+   - Hermes では、進行中のセッションが `session_search` にまだ出てこないことがある。そのときは `sqlite3 ~/.hermes/state.db "select id, title from sessions where source='local' order by started_at desc limit 3;"` でタイトルと id を取る。タイトルの `/` はファイル名に使えないため `-` に置き換える。
+   - 作業をサブエージェントに任せるときは、子は会話を見られない。経緯・確かめた数値・「記憶による／未確認」の注記・成果物（スクリプト、スクリーンショット）の絶対パスを素材ファイル（scratch 内）に書き出し、そのパスを依頼文に入れる。未確認の注記は、ノートでも断定に書き換えないよう指示する。
    - 作成前に `03_Atomic-notes` と `02_MOC` で同じ領域の既存ノートを探し、重複を作らず `related`・`up`・MOC の「隣接ハブ」でつなぐ。
    - 同じセッションを追加で distill する場合は、新しい distill を作らず既存の distill に候補を追記し、既存の atomic note は新規作成ではなく追記で更新する。
 2. `references/distill-atomic-workflow.md` に従って distill を作成する。
